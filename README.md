@@ -2,298 +2,199 @@
   <img src="icon.svg" alt="EloPool Logo" width="21%">
 </p>
 
-# EloPool for StartOS
-
-> **⚠ BCHD Patched Build**
-> The pool binary (`ckpool`) shipped in this package is **patched for compatibility with [BCHD](https://github.com/gcash/bchd)**. Standard ckpool does not support BCHD's JSON-RPC dialect. Do not replace this binary with an unpatched upstream build.
-
-<p align="center">
-  <img src="https://img.shields.io/badge/platform-StartOS-brightgreen" alt="StartOS">
-  <img src="https://img.shields.io/badge/architecture-x86__64%20%7C%20aarch64-blue" alt="Architecture">
-  <img src="https://img.shields.io/badge/license-GPL--3.0-orange" alt="License">
-</p>
-
-**EloPool** is a high-performance Bitcoin Cash mining pool for [StartOS](https://start9.com), built on [ckpool](https://github.com/skaisser/ckpool). It provides **dual-mode** operation — pool mining and solo mining — with a built-in web dashboard.
-
-## Features
-
-- **Pool Mining** (port 3333) — Shared block rewards among all miners
-- **Solo Mining** (port 4567) — Winner takes the entire block reward
-- **Web Dashboard** (port 80) — Real-time hashrate, workers, blocks found
-- **Stratum Protocol** — Compatible with all ASIC miners (Antminer, Whatsminer, Bitaxe, etc.)
-- **Auto-configured** — Automatically connects to your Bitcoin Cash Node (BCHN or Knuth)
-- **Multi-architecture** — Runs on x86_64 and aarch64
-
-## Architecture
-
-```
-┌─────────────────────────────────────────────────────┐
-│                   EloPool Package                    │
-│                                                      │
-│  ┌──────────────┐  ┌──────────────┐  ┌────────────┐ │
-│  │  Pool ckpool │  │  Solo ckpool │  │  Web UI    │ │
-│  │  :3333       │  │  :4567       │  │  :80       │ │
-│  │  (shared)    │  │  (solo)      │  │  (nginx)   │ │
-│  └──────┬───────┘  └──────┬───────┘  └─────┬──────┘ │
-│         │                 │                │         │
-│         └────────┬────────┘                │         │
-│                  │                         │         │
-│         ┌───────▼────────┐     ┌──────────▼───────┐ │
-│         │  /data volume  │     │  stats-api.sh    │ │
-│         │  (ckpool runs) │◄────│  (logs → JSON)   │ │
-│         └───────┬────────┘     └──────────────────┘ │
-│                 │                                    │
-└─────────────────┼────────────────────────────────────┘
-                  │ RPC (8332)
-         ┌────────▼────────┐
-         │  Bitcoin Cash   │
-         │  Node (BCHN     │
-         │  or Knuth)      │
-         └─────────────────┘
-```
-
-## Dependencies
-
-| Package | Required | Notes |
-|---------|----------|-------|
-| **Bitcoin Cash Node** | Yes | BCHN, BCHD or Knuth. Must be fully synced with txindex enabled. |
-
-## Quick Start
-
-1. **Install Bitcoin Cash Node** on your StartOS server and wait for full sync
-2. **Install EloPool** from the marketplace
-3. **Configure** — Set your BCH payout address via Actions → Configure
-4. **Point your miners** at:
-   - Pool mode: `stratum+tcp://<your-server>:3333`
-   - Solo mode: `stratum+tcp://<your-server>:4567`
-5. **Monitor** via the Web Dashboard
-
-### Miner Configuration
-
-| Setting | Value |
-|---------|-------|
-| **URL** | `stratum+tcp://<host>:3333` (pool) or `:4567` (solo) |
-| **Username** | Your BCH address |
-| **Password** | Anything (or `d=DIFFICULTY` for custom difficulty) |
-
-### Tor / Onion Mining (optional)
-
-Every stratum binding can be exposed over **Tor** so remote miners connect over the Tor network without touching your LAN.
-
-1. Open StartOS → **EloPool** → **Interfaces**.
-2. For `Pool Mining`, `Solo Mining`, or `Web Dashboard`: tap **Add**, choose **Tor**.
-3. StartOS generates a `.onion` address automatically. Point your Tor-aware miner at:
-   ```
-   stratum+tcp://<xxxx>.onion:3333   # pool
-   stratum+tcp://<xxxx>.onion:4567   # solo
-   ```
-4. Re-run `setup-vm-forwarding.sh` — it will auto-detect the enabled `.onion` URLs and print/save them alongside your LAN URLs.
-
-The onion keys survive StartOS reboots and are preserved by the standard StartOS backup system.
-
-### Dashboard Metrics — What the Numbers Mean
-
-- **Accepted** — integer count of accepted share submissions — equivalent to what your ASIC's own cgminer API reports as `Accepted` (e.g. Avalon's `Accepted: 6`). Because ckpool stores only a diff-weighted sum per-worker (`worker->shares += diff`), we derive the count by dividing that sum by the worker's current vardiff (`client->diff`). The vardiff is read live from ckpool's Unix control socket by a helper loop in the pool subcontainer (see `assets/pool-entrypoint.sh`) and staged at `/data/{mode}/log/clients.json` for the UI subcontainer.
-- **Rejected** — integer count of rejected share submissions, aggregated from ckpool's own per-share JSONL sharelog at `/data/{mode}/log/{blockheight}/*.sharelog`. Every share submission — accepted or rejected — is written as one line with fields including `workername`, `result` (`true`/`false`), and `reject-reason`. We group by `workername` and count `result: false` entries. Scan is bounded to the 500 most-recently-modified sharelog files so long-running pools stay fast.
-- **Shares (Σdiff)** — the same accepted shares viewed as diff-1–weighted WORK (e.g. `182.00 M`). Useful for comparing contribution across workers with different vardiff targets.
-- **Best Share** — highest individual share difficulty ever submitted by this worker. When Best Share approaches network difficulty (~355 EH on BCH right now), a block is about to be found.
-- **Last Share** / **Status** — Status is derived from the pool's `lastshare` unix timestamp (authoritative, updated on every accepted share): under 5 min = Alive, under 1 h = Idle, older = Dead. Hashrate averages are only used as a last-resort fallback when `lastshare` is missing, so the badge cannot get stuck at "Alive" after a miner goes dark.
-- **Found Blocks** (main card) — counted directly from files in `/data/pool/log/pool/blocks/` (ckpool writes one file per solved block). A true integer count, not derived from share work.
-
-## Running StartOS in a Virtual Machine
-
-If you run StartOS inside a **libvirt/KVM virtual machine** (e.g. via `virt-manager`), miners on your local network cannot reach the VM directly because libvirt uses a NAT bridge (`virbr0`). You need to forward the mining ports from your host machine to the VM.
-
-This works with **any connection type** — wired (Ethernet), wireless (WiFi), or both simultaneously.
-
-### One-Command Setup (Linux)
-
-Download and run the setup script:
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/BitcoinCash1/bch-elopool-startos/master/scripts/setup-vm-forwarding.sh -o setup-vm-forwarding.sh
-chmod +x setup-vm-forwarding.sh
-sudo ./setup-vm-forwarding.sh
-```
-
-That's it. The script will:
-
-1. Auto-detect your StartOS VM and its IP address
-2. Pin the VM's IP so it doesn't change on reboot (static DHCP lease)
-3. Install a [libvirt qemu hook](https://wiki.libvirt.org/Networking.html#forwarding-incoming-connections) that automatically forwards ports whenever the VM starts
-4. Detect **all** your physical network interfaces (wired + wireless) and forward on each
-5. Print the exact stratum URLs to use for your miners
-6. Best-effort: detect any `.onion` addresses you have enabled for the pool and print those too (see [Tor / Onion Mining](#tor--onion-mining-optional))
-
-The rules **persist across host reboots automatically** — the hook is invoked by libvirt every time the VM starts, so there is no cron job or systemd unit to maintain.
-
-```
-$ sudo ./setup-vm-forwarding.sh
-[OK] Found VM: Start9OS
-[OK] VM IP: 192.168.122.129
-[OK]   eno1 (192.168.0.55)          ← wired
-[OK]   wlp4s0 (192.168.0.156)      ← wireless
-[OK] Hook installed at /etc/libvirt/hooks/qemu
-[OK] Forwarding rules active
-
-  Miner configuration — use ANY of these addresses:
-
-    via eno1 (192.168.0.55):
-      EloPool:        stratum+tcp://192.168.0.55:3333
-      EloPool Solo:   stratum+tcp://192.168.0.55:4567
-
-    via wlp4s0 (192.168.0.156):
-      EloPool:        stratum+tcp://192.168.0.156:3333
-      EloPool Solo:   stratum+tcp://192.168.0.156:4567
-```
-
-### Management Commands
-
-```bash
-# Check current status
-sudo ./setup-vm-forwarding.sh --status
-
-# Completely remove (restores system to default)
-sudo ./setup-vm-forwarding.sh --remove
-
-# Specify VM name manually (if auto-detect fails)
-sudo ./setup-vm-forwarding.sh "My StartOS VM"
-```
-
-### How It Works
-
-The script installs `/etc/libvirt/hooks/qemu` — the [official libvirt hook mechanism](https://wiki.libvirt.org/Networking.html#forwarding-incoming-connections). When the VM starts, the hook adds `iptables` DNAT rules that forward incoming connections on ports 3333, 4567, and 80 from every physical network interface to the VM. When the VM stops, the rules are automatically removed.
-
-```
-┌─────────────┐     ┌──────────────────┐     ┌──────────────────┐
-│   Miner     │────▶│  Host Machine    │────▶│  StartOS VM      │
-│ 192.168.0.x │     │  eno1/wlp4s0     │     │  192.168.122.x   │
-│             │     │  (iptables DNAT) │     │  (virbr0 NAT)    │
-└─────────────┘     └──────────────────┘     └──────────────────┘
-  stratum+tcp://       port forwarding          ckpool listening
-  192.168.0.55:3333    3333 → VM:3333           on :3333
-```
-
-No bridges, no NetworkManager changes, no DNS changes. Just iptables rules managed by the official libvirt hook system.
-
-### One-Command Setup (Windows)
-
-Supports **VirtualBox** and **Hyper-V**. Open PowerShell **as Administrator** and run:
-
-```powershell
-Invoke-WebRequest -Uri "https://raw.githubusercontent.com/BitcoinCash1/bch-elopool-startos/master/scripts/setup-vm-forwarding.ps1" -OutFile setup-vm-forwarding.ps1
-.\setup-vm-forwarding.ps1
-```
-
-The script will auto-detect your VM and hypervisor, set up port forwarding, save a `Miner-Connection-Info.txt` to your Desktop, and open a copyable popup with your stratum URLs.
-
-```powershell
-# Management
-.\setup-vm-forwarding.ps1 -Status       # show current state
-.\setup-vm-forwarding.ps1 -Remove       # uninstall everything
-.\setup-vm-forwarding.ps1 -VMName "My VM"  # specify VM name
-```
-
-### One-Command Setup (macOS)
-
-Supports **VirtualBox** and **UTM**. Open Terminal and run:
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/BitcoinCash1/bch-elopool-startos/master/scripts/setup-vm-forwarding-mac.sh -o setup-vm-forwarding-mac.sh
-chmod +x setup-vm-forwarding-mac.sh
-sudo ./setup-vm-forwarding-mac.sh
-```
-
-Same features: auto-detect, Desktop txt file, popup with Copy to Clipboard button.
-
-```bash
-sudo ./setup-vm-forwarding-mac.sh --status    # show current state
-sudo ./setup-vm-forwarding-mac.sh --remove    # uninstall everything
-```
-
-> **Tip (all platforms):** If you use **Bridged Networking** instead of NAT, the VM gets its own LAN IP and miners can connect directly — no port forwarding script needed.
-
-### Troubleshooting
-
-| Problem | Solution |
-|---------|----------|
-| Script says "VM not found" | Run `virsh list --all` to see VM names, then pass it: `sudo ./setup-vm-forwarding.sh "exact name"` |
-| Script says "Cannot determine VM IP" | Start the VM first, wait 30 seconds for it to get an IP, then run again |
-| Miner connects but pool shows no hashrate | Check that the pool service is running on StartOS (Actions → Start) |
-| Port forwarding stops after reboot | The hook should auto-apply when the VM starts. Run `sudo ./setup-vm-forwarding.sh --status` to verify the hook file exists |
-| Want to undo everything | `sudo ./setup-vm-forwarding.sh --remove` restores your system completely |
-| Windows: "execution policy" error | Run `Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass` first |
-| macOS: VBox rules need VM stopped | Shut down the VM, run the script, then start the VM |
-| macOS UTM: need guest IP | Find it inside StartOS (System → Network) and enter when prompted |
-
-## Building from Source
-
-```bash
-# Prerequisites: StartOS SDK, Docker, Node.js 20+
-git clone https://github.com/BitcoinCash1/bch-elopool-startos.git
-cd bch-elopool-startos
-npm install
-make
-```
-
-## Port Allocation
-
-| Port | Protocol | Purpose |
-|------|----------|---------|
-| 3333 | Stratum (TCP) | Pool mining |
-| 4567 | Stratum (TCP) | Solo mining |
-| 80 | HTTP | Web dashboard |
-
-## Configuration Options
-
-| Option | Default | Description |
-|--------|---------|-------------|
-| Payout Address | *(required)* | BCH address for coinbase rewards |
-| Pool Fee | 1% | Fee percentage for pool mode (solo is always 0%) |
-| Pool Identifier | `EloPool` | Coinbase signature visible on block explorers |
-| Starting Difficulty | 64 | Initial share difficulty for new workers |
-
-## How It Works
-
-EloPool runs two independent ckpool instances from the same Docker image:
-- **Pool instance** shares rewards proportionally based on submitted shares
-- **Solo instance** directs the entire block reward to whichever miner finds it
-
-Both instances connect to your Bitcoin Cash Node via RPC. The web dashboard reads ckpool's log files directly and serves stats as static JSON via nginx.
-
-You can point different miners to different modes simultaneously — no reconfiguration needed.
-
-## Upstream
-
-- [skaisser/ckpool](https://github.com/skaisser/ckpool) — EloPool fork of ckpool
-- [bitcoin-cash-node](https://github.com/bitcoin-cash-node/bitcoin-cash-node) — Bitcoin Cash full node
-
-## License
-
-GPL-3.0 — matches upstream ckpool license.
+# EloPool on StartOS
+
+> **Upstream docs:** <https://github.com/skaisser/ckpool>
+>
+> Everything not listed in this document should behave the same as upstream
+> ckpool. If a feature, setting, or behavior is not mentioned here, the upstream
+> documentation is accurate and fully applicable.
+
+[ckpool](https://github.com/skaisser/ckpool) is a Bitcoin Cash mining pool server — a fork of Con Kolivas' ckpool with CashAddr support. This package runs it as two pools at once, shared and solo, against a Bitcoin Cash full node installed on the same StartOS server, and adds a web dashboard for monitoring them.
 
 ---
 
-<details>
-<summary><strong>AI Reference Prompt</strong></summary>
+## Table of Contents
+
+- [Image and Container Runtime](#image-and-container-runtime)
+- [Volume and Data Layout](#volume-and-data-layout)
+- [Installation and First-Run Flow](#installation-and-first-run-flow)
+- [Configuration Management](#configuration-management)
+- [Network Access and Interfaces](#network-access-and-interfaces)
+- [Actions (StartOS UI)](#actions-startos-ui)
+- [Backups and Restore](#backups-and-restore)
+- [Health Checks](#health-checks)
+- [Dependencies](#dependencies)
+- [Limitations and Differences](#limitations-and-differences)
+- [What Is Unchanged from Upstream](#what-is-unchanged-from-upstream)
+- [Contributing](#contributing)
+- [Quick Reference for AI Consumers](#quick-reference-for-ai-consumers)
+
+---
+
+## Image and Container Runtime
+
+One image, `elopool`, built from the package `Dockerfile`. There is no upstream image: the first stage clones `skaisser/ckpool` at the tag pinned in `CKPOOL_REF` and builds it with autotools; the runtime stage is `node:20-bookworm-slim` with nginx, curl and jq added.
+
+Architectures: `x86_64` and `aarch64`, each built natively.
+
+`patches/apply.py` runs against the upstream source before it is compiled. Upstream targets Bitcoin Cash Node, and each patch fixes something that is otherwise silently broken against one of the other two nodes — a JSON-RPC request with no `id` member and a `coinbasetxn` GBT capability (both rejected by BCHD), and a `coinbaseaux` field that Flowee omits and the pool dereferences. Every patch asserts its expected hit count, so an upstream bump that moves one of these lines fails the image build rather than producing a pool that cannot mine.
+
+Four daemons share the one image:
+
+| Daemon | Subcontainer | Command                                | Purpose                         |
+| ------ | ------------ | -------------------------------------- | ------------------------------- |
+| `pool` | `pool-sub`   | `pool-entrypoint.sh pool <conf>`       | Shared stratum server           |
+| `solo` | `solo-sub`   | `pool-entrypoint.sh solo <conf>`       | Solo stratum server (`ckpool -B`) |
+| `ui`   | `ui-sub`     | `ui-entrypoint.sh`                     | nginx + stats writer            |
+
+`pool-entrypoint.sh` wraps the ckpool binary rather than replacing it: it restarts the daemon if it exits abnormally, pre-creates the sharelog directory for the next few block heights (upstream only creates it when it sees a new block, so shares submitted in between are dropped from the only per-worker record that is persisted), and stages the live client table to the shared volume so the dashboard can derive a per-worker submission count.
+
+## Volume and Data Layout
+
+One volume, `main`, mounted at `/data` in all three subcontainers.
+
+| Path                        | Contents                                                        |
+| --------------------------- | --------------------------------------------------------------- |
+| `/data/store.json`          | StartOS-side settings — node choice, payout address, pool params |
+| `/data/pool/ckpool.conf`    | Generated shared-pool config, rewritten on every start          |
+| `/data/solo/ckpool.conf`    | Generated solo config, rewritten on every start                 |
+| `/data/{pool,solo}/log/`    | Pool status, sharelogs, per-user files — the mining statistics   |
+
+The selected node's own `main` volume is mounted read-only at `/mnt/node`. Nothing reads chain data from it; it is there so `main` can read the node's `store.json` for the chain it is on and, on Bitcoin Cash Node and Bitcoin Cash Daemon, its RPC credentials.
+
+## Installation and First-Run Flow
+
+Two critical tasks are raised on install: **Select Node Backend** and **Configure**. Neither pool can mine without both — an unset payout address means a shared-mined block would pay nowhere.
+
+`main` refuses to start the mining daemons and reports a single failing **Mining** health check when the payout address is missing, belongs to a different chain than the node is on, or the node's RPC is not reachable. It does not throw: a thrown `setupMain` crash-loops the service under auto-restart and leaks a subcontainer mount set on every cycle.
+
+Choosing Flowee the Hub additionally raises a task on Flowee. Flowee stores only a hash of each RPC password and cannot hand one back, so this package mints a credential on first init and registers it there through Flowee's own `create-dependent-credential` action.
+
+## Configuration Management
+
+| StartOS-Managed                                                               | Upstream-Managed                          |
+| ----------------------------------------------------------------------------- | ----------------------------------------- |
+| Both `ckpool.conf` files in full — RPC target and credentials, payout address, pool signature, stratum ports, log directories, solo fee, starting difficulty | Nothing — the config files are regenerated on every start and hand edits are lost |
+
+The settings a user can change are the four inputs of the **Configure** action plus the node choice in **Select Node Backend**. Everything else in the generated configs is fixed at upstream's defaults.
+
+Two details of how ckpool reads a fee are load-bearing:
+
+- `poolfee` is a **percentage**, not a fraction — the coinbase deduction is `reward / 100 * poolfee`.
+- The fee is paid to **`pooladdress`**, a separate key. `poolvalid` is only set when that address validates, and the fee branch is gated on it, so without `pooladdress` no fee is taken however high the percentage.
+
+It is written with a decimal point even when whole, because ckpool reads it through jansson's `json_is_real`, which is false for an integer.
+
+The fee is applied to the solo config only. Shared mining already pays the whole block to `btcaddress` — the operator's own payout address — so a fee output there would only take a cut of their own reward.
+
+## Network Access and Interfaces
+
+| Interface     | Id            | Internal port | Protocol | Type  | Purpose                    |
+| ------------- | ------------- | ------------- | -------- | ----- | -------------------------- |
+| Pool Mining   | `pool-mining` | 3333          | raw TCP  | `p2p` | Shared stratum endpoint    |
+| Solo Mining   | `solo-mining` | 4567          | raw TCP  | `p2p` | Solo stratum endpoint      |
+| Web Dashboard | `web-ui`      | 80            | HTTP     | `ui`  | Mining statistics          |
+
+Both stratum interfaces carry a `schemeOverride` of `stratum+tcp`, so the addresses StartOS shows are in the form a miner accepts. Stratum is unencrypted — mining hardware does not speak TLS — so both bind with `secure: { ssl: false }`.
+
+Where each interface is reachable is the user's choice, made in StartOS.
+
+## Actions (StartOS UI)
+
+| Name                | Id                  | Visibility | Availability | Inputs                                                            | Outputs                    |
+| ------------------- | ------------------- | ---------- | ------------ | ----------------------------------------------------------------- | -------------------------- |
+| Connection Info     | `connection-info`   | enabled    | only running | none                                                              | Stratum URLs, username and password format |
+| Configure           | `configure`         | enabled    | any          | Payout address, solo fee, pool identifier, starting difficulty    | none                       |
+| Select Node Backend | `select-node`       | enabled    | any          | Node package                                                      | none                       |
+| Wipe Mining State   | `wipe-mining-state` | enabled    | any          | none                                                              | none                       |
+
+**Configure** and **Select Node Backend** write `store.json`, which `main` reads through a mapped `.const()` — the write is what restarts the pools onto the new settings.
+
+**Wipe Mining State** sets a flag and restarts. The deletion happens in `main` before the daemons launch, because ckpool reloads its accumulated totals from `{logdir}/pool/pool.status` on every start; deleting them while it is running would simply write them back. `main` performs the same wipe unprompted when the node's chain has changed since the last start, since shares counted against one chain's difficulty mean nothing on another.
+
+## Backups and Restore
+
+The `main` volume in full, which is the settings and the mining statistics. Restoring returns the pools to the settings and statistics of the backup; connected miners reconnect on their own.
+
+## Health Checks
+
+| Check         | Display       | What it reports                                                                                    |
+| ------------- | ------------- | -------------------------------------------------------------------------------------------------- |
+| `pool` daemon | Shared Mining | The last lines of the pool's log first — a rejected payout address or an unreachable node fail here — then that the stratum port is listening |
+| `solo` daemon | Solo Mining   | The same, for the solo pool                                                                        |
+| `ui` daemon   | Web Dashboard | Port 80 listening                                                                                  |
+| `node-status` | Node          | Re-reads the node's `store.json`: restarts the service if the node changed chain, fails if it is unreadable, loads while the node is still syncing |
+| `mining`      | Mining        | Replaces all of the above when neither pool can run — no payout address, wrong-chain address, or no reachable node |
+
+The log check exists because ckpool holds the stratum port open while unable to build work, so a bare port check reports a healthy pool that mines nothing.
+
+`node-status` is where a chain change is noticed, for every node. Bitcoin Cash Node does move its RPC port with the chain, but the binding it moves off is left *disabled* rather than removed, and a disabled binding still resolves to its old address — so the bridge address `main` watches does not go null and would not re-run `main` on its own.
+
+## Dependencies
+
+Exactly one node is needed at a time — whichever **Select Node Backend** has chosen — so all three are declared optional.
+
+| Dependency          | Package id     | Health check     | Mounted                   | Purpose                                    |
+| ------------------- | -------------- | ---------------- | ------------------------- | ------------------------------------------ |
+| Bitcoin Cash Node   | `bitcoincashd` | `primary`        | `main` → `/mnt/node` (ro) | Block templates over JSON-RPC              |
+| Bitcoin Cash Daemon | `bchd`         | `rpc-plaintext`  | `main` → `/mnt/node` (ro) | The same, dialed through BCHD's plaintext proxy so no certificate has to be trusted |
+| Flowee the Hub      | `flowee`       | `primary`        | `main` → `/mnt/node` (ro) | The same, with a credential this package registers on it |
+
+The dependency is gated on the node being up, not on it being synced — a pool that refused to start until a fresh chain had synced would be unusable for days. Sync state is reported by the `node-status` health check instead.
+
+No autoconfig task is raised on Bitcoin Cash Node or Bitcoin Cash Daemon. The pool calls only `getblocktemplate`, `submitblock`, `validateaddress`, `getrawtransaction` and the chain-info reads, none of which need a transaction index or an unpruned chain.
+
+## Limitations and Differences
+
+1. **Knuth is not supported.** It serves mining templates through `getblocktemplatelight` / `submitblocklight`; ckpool speaks classic `getblocktemplate` only.
+2. **Shared mining has no on-chain payout split.** That is ckpool's design: a block found on the shared endpoint pays entirely to the operator's address, and the operator settles with miners by whatever means they choose. Only the solo endpoint pays miners in the coinbase.
+3. **Both config files are regenerated on every start.** Any hand edit to `/data/{pool,solo}/ckpool.conf` is overwritten.
+4. **Only a subset of upstream's configuration is exposed.** `mindiff_overrides`, multiple `serverurl` entries, `donation`, ZMQ block notification and node/proxy/redirector/passthrough modes are all left at upstream defaults and are not settable.
+5. **The node must be on the same StartOS server.** There is no option to point the pool at a remote node.
+6. **The dashboard's suggested stratum URLs use the pools' internal ports.** Use the **Connection Info** action for the addresses StartOS actually assigned.
+
+## What Is Unchanged from Upstream
+
+- The stratum v1 protocol, vardiff behavior, and share accounting.
+- `btcsolo` mode, which is what the solo endpoint runs: the coinbase pays the miner that found the block, less the `poolfee` output.
+- The username-as-address convention, including the `address.workername` suffix.
+- CashAddr handling, which this fork decodes itself rather than asking the node — which is why no `validateaddress` patch is needed here.
+- The on-disk log layout ckpool writes: `pool.status`, the per-user files, and the per-height sharelog directories.
+
+## Contributing
+
+See [AGENTS.md](./AGENTS.md).
+
+---
+
+## Quick Reference for AI Consumers
 
 ```yaml
-package: bch-elopool
-type: startos-service
-sdk: "@start9labs/start-sdk@1.0.0"
-upstream: skaisser/ckpool
-depends_on: bitcoincashd (BCHN or Knuth flavor)
+package_id: bch-elopool
+architectures: [x86_64, aarch64]
+volumes:
+  main: /data
+mounted_dependency_volumes:
+  '<selected node>:main': /mnt/node (read-only)
 ports:
-  pool: 3333 (stratum)
-  solo: 4567 (stratum)
-  ui: 80 (http)
-daemons: 3 (pool-ckpool, solo-ckpool, ui-nginx)
-volumes: main (/data)
-dependency_mount: /mnt/bitcoincashd (reads store.json for RPC creds)
-critical_tasks: txindex=true, prune=null, zmqEnabled=true
-config_fields: payoutAddress, poolFee, poolIdentifier, poolDifficulty
-webui: nginx serving static HTML + stats-api.sh background (logs → JSON)
-build: multi-stage Docker (ubuntu build-ckpool → node:20-bookworm-slim runtime)
+  pool-mining: 3333
+  solo-mining: 4567
+  web-ui: 80
+dependencies: [bitcoincashd, bchd, flowee] # all optional; exactly one selected
+startos_managed_env_vars: []
+startos_managed_files:
+  - /data/pool/ckpool.conf
+  - /data/solo/ckpool.conf
+  - /data/store.json
+actions:
+  - connection-info
+  - configure
+  - select-node
+  - wipe-mining-state
+health_checks:
+  - pool
+  - solo
+  - ui
+  - node-status
 ```
-
-</details>
