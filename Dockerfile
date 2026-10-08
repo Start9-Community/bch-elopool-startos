@@ -1,3 +1,27 @@
+# ── Build ckpool ────────────────────────────────────────────────────
+FROM ubuntu:22.04 AS build
+
+RUN apt-get update && \
+    DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+    build-essential autoconf automake libtool pkg-config \
+    libssl-dev libjansson-dev libzmq3-dev \
+    ca-certificates git python3 && \
+    rm -rf /var/lib/apt/lists/*
+
+ARG CKPOOL_REF=v1.1.0
+RUN git clone --depth 1 --branch ${CKPOOL_REF} \
+    https://github.com/skaisser/ckpool.git /build/ckpool
+
+COPY patches/ /build/patches/
+WORKDIR /build/ckpool
+
+# Every patch below either fails the build or is asserted afterwards: a `sed`
+# whose pattern stops matching a future upstream is otherwise silent, and the
+# resulting binary breaks only against one of the three nodes.
+RUN python3 /build/patches/apply.py
+
+RUN ./autogen.sh && ./configure && make -j"$(nproc)"
+
 # ── Runtime ─────────────────────────────────────────────────────────
 FROM node:20-bookworm-slim
 
@@ -8,9 +32,8 @@ RUN apt-get update && \
     nginx libssl3 libjansson4 libzmq5 curl jq && \
     rm -rf /var/lib/apt/lists/*
 
-# ckpool binaries (pre-built, BCHD-patched — see Dockerfile.binary)
-COPY --from=ghcr.io/bitcoincash1/elopool-bch:latest /build/ckpool/src/ckpool /usr/local/bin/
-COPY --from=ghcr.io/bitcoincash1/elopool-bch:latest /build/ckpool/src/ckpmsg /usr/local/bin/
+COPY --from=build /build/ckpool/src/ckpool /usr/local/bin/
+COPY --from=build /build/ckpool/src/ckpmsg /usr/local/bin/
 
 # WebUI static files
 COPY webui/ /var/www/html/
@@ -25,11 +48,11 @@ RUN chmod +x /usr/local/bin/stats-api.sh
 # Delete-worker API handler
 COPY assets/delete-worker.js /usr/local/bin/delete-worker.js
 
-# Pool/solo daemon entrypoint (runs stats-writer alongside ckpool)
+# Pool/solo daemon entrypoint
 COPY assets/pool-entrypoint.sh /usr/local/bin/pool-entrypoint.sh
 RUN chmod +x /usr/local/bin/pool-entrypoint.sh
 
-# Entrypoint for UI daemon (starts stats updater + nginx)
+# Entrypoint for the UI daemon (stats updater + nginx)
 COPY assets/ui-entrypoint.sh /usr/local/bin/ui-entrypoint.sh
 RUN chmod +x /usr/local/bin/ui-entrypoint.sh
 
