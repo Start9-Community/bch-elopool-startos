@@ -18,19 +18,23 @@ Freshly scaffolded? Work the
 guide page, not a file in this repo — read it, don't copy it in.
 
 Keep `README.md` (technical reference for an AI support or administering agent) and
-`instructions.md` (end-user docs) in sync with your changes.
+`instructions.md` (end-user docs) in sync with your changes. This file restates neither:
+whoever changes the package has both, so it carries only what they don't — repo mechanics,
+a change that looks right and is not, where the next thing gets added, a naming trap, a
+build or test invocation particular to this repo.
 
-**Bugs and feature requests are GitHub issues on this repo** — file them as you find them.
+**Fix a defect you spot rather than reporting it** — you have the package open and the
+context to be sure. File **a GitHub issue on this repo** only when the call isn't yours to
+make: you can't pin the cause down, two defensible fixes exist, or it's too large to ride on
+the work in hand. An open issue is a report, not a queue — implement one when you're asked
+to or when it's labelled `Approved`, then close it with `Closes #<n>`.
+
 Don't record work in the repo instead: no `TODO.md`, no `NOTES.md`, no `PLAN.md`. What you
 verified, tried, and decided belongs in the commit message and the PR body.
 
 ## This repo
 
-- **The two endpoints are genuinely different, and the difference is `ckpool -B`.** Shared mining pays a found block to `btcaddress` — the operator — and the operator settles with miners off-chain. `-B` is btcsolo: the coinbase pays the miner that found the block. Its sibling package, ASICSeer, has no solo mode at all because its upstream has none; don't mirror changes between the two without checking which upstream they land on.
-- **`poolfee` is a percentage paid to `pooladdress`, and both are required.** ckpool computes `reward / 100 * poolfee` and gates the fee output on `poolvalid`, which is only set when `pooladdress` validates — so without that address no fee is taken however high the percentage. It also reads the number through jansson's `json_is_real`, which is false for a whole number. `fileModels/ckpool.conf.ts` handles the float; `main.ts` sets `pooladdress` and applies the fee to the **solo** config only, writing `poolfee: 0` on shared because the block already pays the operator. A revision of this package divided the fee by a hundred _and_ never set the address; it collected nothing.
-- **`Dockerfile` builds ckpool from source, natively per arch.** Don't reintroduce the `--platform=linux/amd64` pin on the builder stage: it put amd64 binaries in the aarch64 image while the manifest claimed that arch.
-- **`main` must never throw for a user-fixable problem.** A thrown `main` crash-loops under auto-restart and leaks a mount set every cycle, so the missing/mismatched address and unreachable node paths return a single failing `mining` health check instead.
-- **Statistics must be wiped before the daemons launch.** ckpool reloads its totals from its status file at start, so clearing under a running pool achieves nothing. A chain change wipes both pools too — shares counted at one chain's difficulty mean nothing on another.
-- **BCHN remaps its RPC port per chain**; BCHD and Flowee are fixed. BCHD is dialed through its plaintext proxy so no certificate has to be trusted.
-- **The node is reached with `sdk.host.getBridgeAddress`, never `<package-id>.startos`** — that overlay DNS is deprecated and forbidden.
-- **Each mining check scrapes its own log before probing its port.** ckpool holds the stratum port open while it cannot get a block template, so a bare port check reports a pool that mines nothing.
+- **Don't mirror a change between this package and ASICSeer without checking which upstream it lands on.** ASICSeer's ckpool has no solo mode (`ckpool -B`).
+- **Keep the decimal `poolfee` sentinel in `fileModels/ckpool.conf.ts` and the `pooladdress` `main.ts` writes beside a non-zero fee.** ckpool discards a whole-number fee, and pays none without the address.
+- **Don't reintroduce `--platform=linux/amd64` on the `Dockerfile`'s builder stage**: it puts amd64 binaries in the aarch64 image.
+- **`main` never throws for a user-fixable problem** — return the failing `mining` health check instead; a thrown `main` crash-loops and leaks a mount set every cycle.

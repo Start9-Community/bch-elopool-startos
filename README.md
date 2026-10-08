@@ -87,19 +87,19 @@ The store holds the node selection, the payout address, the fee, the pool identi
 
 ## Dependencies
 
-Three declared, **exactly one active** — whichever node you select.
+Three declared, all optional, **exactly one enabled** — whichever node you select.
 
-| Dependency          | Required         | Health checks required | Why                            |
-| ------------------- | ---------------- | ---------------------- | ------------------------------ |
-| Bitcoin Cash Node   | Only if selected | `primary`              | Block templates and submission |
-| Bitcoin Cash Daemon | Only if selected | `rpc-plaintext`        | The same                       |
-| Flowee the Hub      | Only if selected | `primary`              | The same                       |
+| Dependency          | Required         | Version         | Health checks required | Why                            |
+| ------------------- | ---------------- | --------------- | ---------------------- | ------------------------------ |
+| Bitcoin Cash Node   | Only if selected | `>=29.0.0:11`   | `primary`              | Block templates and submission |
+| Bitcoin Cash Daemon | Only if selected | `>=0.22.2:0`    | `rpc-plaintext`        | The same                       |
+| Flowee the Hub      | Only if selected | `>=2026.5.2:12` | `primary`              | The same                       |
 
 **They are gated on being up, not on being synced** — a node's initial sync takes days, and reporting that the chain is behind is more useful than refusing to start for the duration. The Node health check is what reports it.
 
-**Each node is dialed differently:** Bitcoin Cash Node remaps its RPC port per chain, so which port to resolve depends on the chain it is on; Bitcoin Cash Daemon is dialed through its plaintext proxy so no certificate has to be trusted; and **Flowee keeps only a hash of each RPC password**, so this package mints its own credential and asks Flowee to register it.
+**Each node is dialed differently:** Bitcoin Cash Node remaps its RPC port per chain, so which port to resolve depends on the chain it is on — and only from `29.0.0:11` does it move that binding when it switches chain, hence the floor; Bitcoin Cash Daemon is dialed through its plaintext proxy so no certificate has to be trusted; and **Flowee keeps only a hash of each RPC password**, so this package mints its own credential and asks Flowee to register it.
 
-Selecting a node clears the tasks belonging to the nodes you are not on.
+A task this package raised on a node you have switched away from is hidden while that node is not selected; it returns if you select that node again.
 
 ## Network Access and Interfaces
 
@@ -150,6 +150,7 @@ Chooses which of the three Bitcoin Cash nodes both pools mine against.
 
 - **What it changes:** the selection, and through it the dependency, the mount, and the RPC address.
 - **Cost:** both pools restart onto the new node.
+- **Nothing is preselected** until a node has been chosen once; after that the form opens on the current node.
 - **Choosing Flowee raises the credential task on Flowee**, from here rather than from the dependency declaration — which re-runs on every init and would keep asking.
 
 ### Configure
@@ -243,10 +244,10 @@ file_models:
   - solo/ckpool.conf # same, with poolfee + pooladdress
   - store.json # node selection, payout address, fee, identifier, difficulty, flowee creds
 startos_managed_env_vars: [] # everything is ckpool.conf
-dependencies: # exactly one is declared at a time, from the stored selection
-  - bitcoincashd # healthChecks: [primary]; RPC port varies per chain
-  - bchd # healthChecks: [rpc-plaintext]; dialed via the plaintext proxy
-  - flowee # healthChecks: [primary]; needs a credential registered via createTask
+dependencies: # all three optional; exactly one enabled at a time, from the stored selection
+  - bitcoincashd # >=29.0.0:11; healthChecks: [primary]; RPC port varies per chain
+  - bchd # >=0.22.2:0; healthChecks: [rpc-plaintext]; dialed via the plaintext proxy
+  - flowee # >=2026.5.2:12; healthChecks: [primary]; needs a credential registered via createTask
 interfaces:
   pool-mining: { type: p2p, port: 3333 } # shared; block pays btcaddress
   solo-mining: { type: p2p, port: 4567 } # solo; block pays the finder, fee to pooladdress
