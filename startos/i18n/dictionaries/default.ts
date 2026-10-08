@@ -33,7 +33,7 @@ const dict = {
   'Choose which Bitcoin Cash node the pool gets its block templates from.': 24,
   'The pool restarts against the new node. If that node is on a different chain, the accumulated share and hashrate figures are cleared, because they do not carry across chains.': 25,
   'Node Backend': 26,
-  'The node must be installed and fully synced before the pool can mine on it.': 27,
+  'Choose the node you have installed. Blocks found before it finishes syncing are rejected by the network.\n- Bitcoin Cash Node: works with its default settings\n- Bitcoin Cash Daemon: works with its default settings\n- Flowee the Hub: raises a task on Flowee to register the login the pool uses': 27,
   'Bitcoin Cash Node': 28,
   'Bitcoin Cash Daemon': 29,
   'Flowee the Hub': 30,
