@@ -56,6 +56,7 @@ export const connectionInfo = sdk.Action.withoutInput(
         copyable: true,
         qr: false,
         masked: false,
+        launchable: false,
       }))
 
     return {
@@ -89,6 +90,7 @@ export const connectionInfo = sdk.Action.withoutInput(
             copyable: false,
             qr: false,
             masked: false,
+            launchable: false,
           },
           {
             name: i18n('Password'),
@@ -98,6 +100,7 @@ export const connectionInfo = sdk.Action.withoutInput(
             copyable: true,
             qr: false,
             masked: false,
+            launchable: false,
           },
         ],
       },
