@@ -1,18 +1,18 @@
 import { IMPOSSIBLE, VersionInfo } from '@start9labs/start-sdk'
 
 export const current = VersionInfo.of({
-  version: '1.1.0:1',
+  version: '1.1.0:2',
   releaseNotes: {
-    en_US:
-      '- Requires Bitcoin Cash Node 29.0.0:11 or later.\n- Select Node Backend preselects no node until you have chosen one, and its description says what each node needs.',
-    es_ES:
-      '- Requiere Bitcoin Cash Node 29.0.0:11 o posterior.\n- «Seleccionar nodo» no preselecciona ningún nodo hasta que usted haya elegido uno, y su descripción indica lo que necesita cada nodo.',
-    de_DE:
-      '- Erfordert Bitcoin Cash Node 29.0.0:11 oder neuer.\n- „Knoten auswählen“ wählt keinen Knoten vor, bis Sie einen gewählt haben, und seine Beschreibung nennt, was jeder Knoten braucht.',
-    pl_PL:
-      '- Wymaga Bitcoin Cash Node 29.0.0:11 lub nowszego.\n- Akcja „Wybierz węzeł” nie zaznacza wstępnie żadnego węzła, dopóki go nie wybierzesz, a jego opis podaje, czego potrzebuje każdy węzeł.',
-    fr_FR:
-      "- Nécessite Bitcoin Cash Node 29.0.0:11 ou ultérieur.\n- « Sélectionner le nœud » ne présélectionne aucun nœud tant que vous n'en avez pas choisi un, et sa description indique ce dont chaque nœud a besoin.",
+    en_US: `- When mining cannot start, the Mining health check reports why once per start.
+- Restarting EloPool while it is still starting stops every process of the previous run.`,
+    es_ES: `- Cuando la minería no puede iniciarse, la comprobación de estado Minería indica el motivo una vez por inicio.
+- Reiniciar EloPool mientras aún se está iniciando detiene todos los procesos de la ejecución anterior.`,
+    de_DE: `- Wenn das Mining nicht starten kann, nennt die Statusprüfung Mining den Grund einmal pro Start.
+- Ein Neustart von EloPool, während es noch startet, beendet alle Prozesse des vorherigen Laufs.`,
+    pl_PL: `- Gdy kopanie nie może się rozpocząć, kontrola stanu Kopanie podaje przyczynę raz przy każdym uruchomieniu.
+- Ponowne uruchomienie EloPool w trakcie uruchamiania zatrzymuje wszystkie procesy poprzedniego uruchomienia.`,
+    fr_FR: `- Lorsque le minage ne peut pas démarrer, la vérification d'état Minage en indique la raison une fois par démarrage.
+- Redémarrer EloPool pendant son démarrage arrête tous les processus de l'exécution précédente.`,
   },
   migrations: {
     up: async ({ effects }) => {},
