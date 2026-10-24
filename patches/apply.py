@@ -28,7 +28,24 @@ PATCHES = [
         'src/bitcoin.c',
         r'{\"method\": ',
         r'{\"id\":0,\"method\": ',
-        10,
+        9,
+    ),
+    (
+        'and the getblockchaininfo call that picks the CashAddr prefix',
+        'src/generator.c',
+        r'{\"method\": ',
+        r'{\"id\":0,\"method\": ',
+        1,
+    ),
+    (
+        'that prefix lookup knows none of the test-chain names BCHN and BCHD '
+        'report, so it falls back to bitcoincash: and rejects every bchtest: address',
+        'src/generator.c',
+        '!strcmp(chain, "test") || ',
+        '!strcmp(chain, "test") || !strcmp(chain, "testnet3") || '
+        '!strcmp(chain, "test4") || !strcmp(chain, "scale") || '
+        '!strcmp(chain, "chip") || ',
+        1,
     ),
     (
         'BCHD errors on the "coinbasetxn" GBT capability unless --miningaddr is set',

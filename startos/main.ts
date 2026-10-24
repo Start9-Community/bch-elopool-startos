@@ -214,7 +214,7 @@ export const main = sdk.setupMain(async ({ effects }) => {
   const identifier = settings?.poolIdentifier ?? 'EloPool'
   const common = {
     btcd: [{ url: rpcAddress, auth: rpcUser, pass: rpcPassword, notify: true }],
-    btcaddress: payoutAddress,
+    bchaddress: payoutAddress,
     blockpoll: 100,
     update_interval: 30,
     mindiff: 1,
@@ -228,7 +228,7 @@ export const main = sdk.setupMain(async ({ effects }) => {
     btcsig: `/${identifier}/`,
     serverurl: [`0.0.0.0:${poolPort}`],
     logdir: `${rootDir}/pool/log`,
-    // Shared mining pays the whole block to `btcaddress`, so a fee here would
+    // Shared mining pays the whole block to `bchaddress`, so a fee here would
     // only take a cut of the operator's own reward.
     poolfee: 0,
   })

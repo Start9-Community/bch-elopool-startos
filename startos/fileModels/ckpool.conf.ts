@@ -10,7 +10,7 @@ const shape = z.looseObject({
       notify: z.boolean(),
     }),
   ),
-  btcaddress: z.string(),
+  bchaddress: z.string(),
   btcsig: z.string(),
   blockpoll: z.number(),
   update_interval: z.number(),
@@ -23,26 +23,9 @@ const shape = z.looseObject({
   pooladdress: z.string().optional(),
 })
 
-export type CkpoolConf = z.infer<typeof shape>
-
-/**
- * ckpool reads `poolfee` with jansson's `json_is_real`, which rejects a whole
- * number — a fee of 1 would be discarded and nothing taken. JSON cannot spell a
- * whole number as a float, hence the sentinel.
- */
-const POOL_FEE = ' poolfee '
-
-const toFile = (conf: CkpoolConf) =>
-  JSON.stringify({ ...conf, poolfee: POOL_FEE }, null, 2).replace(
-    JSON.stringify(POOL_FEE),
-    conf.poolfee.toFixed(3),
-  )
-
 /** One per daemon, on the shared volume the dashboard's stats script reads. */
 export const ckpoolConf = (mode: 'pool' | 'solo') =>
-  FileHelper.raw<CkpoolConf>(
+  FileHelper.json(
     { base: sdk.volumes.main, subpath: `${mode}/ckpool.conf` },
-    toFile,
-    JSON.parse,
-    (data) => shape.parse(data),
+    shape,
   )
