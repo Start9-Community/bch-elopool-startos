@@ -70,9 +70,9 @@ log "starting ckpool mode=${MODE} conf=${CONF} rpc_target=${RPC_TARGET:-unknown}
 (
   while : ; do
     sleep 10
-    [ -S "/tmp/${MODE}/listener" ] || continue
-    OUT=$(printf 'clients\n' | ckpmsg -s /tmp -n "${MODE}" 2>/dev/null \
-            | sed -n 's/.*Received response: //p' | head -1)
+    [ -S "/tmp/${MODE}/stratifier" ] || continue
+    OUT=$(printf 'clients\n' | ckpmsg -s /tmp -n "${MODE}" -N stratifier 2>/dev/null \
+            | sed -n '/Received response: /,$p' | sed '1s/^.*Received response: //' | tr -d '\n')
     if [ -n "$OUT" ]; then
       mkdir -p "/data/${MODE}/log" 2>/dev/null
       printf '%s' "$OUT" > "/data/${MODE}/log/.clients.tmp" \

@@ -24,7 +24,7 @@ Two mining endpoints and a dashboard, all fed by a Bitcoin Cash node running on 
 
 ### Pointing miners at the pools
 
-**Connection Info** gives you the `stratum+tcp://` addresses for both endpoints, along with the username and password format. Set the username to a Bitcoin Cash address, optionally followed by a dot and a name for the machine — `bitcoincash:qr….rig1`. On the solo endpoint that address is what a block it finds pays to. Miners with no name are numbered `worker01`, `worker02` and so on. The password is not checked; anything will do.
+**Connection Info** gives you the `stratum+tcp://` addresses for both endpoints, along with the username and password format. Set the username to a Bitcoin Cash address, optionally followed by a dot and a name for the machine — `bitcoincash:qr….rig1`. On the solo endpoint that address is what a block it finds pays to; a username that is not an address mines to your own payout address, and a mistyped address is refused. Miners with no name are numbered `worker01`, `worker02` and so on. The password is not checked; anything will do.
 
 ### Web Dashboard
 

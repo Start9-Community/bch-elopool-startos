@@ -35,6 +35,6 @@ verified, tried, and decided belongs in the commit message and the PR body.
 ## This repo
 
 - **Don't mirror a change between this package and ASICSeer without checking which upstream it lands on.** ASICSeer's ckpool has no solo mode (`ckpool -B`).
-- **Keep the decimal `poolfee` sentinel in `fileModels/ckpool.conf.ts` and the `pooladdress` `main.ts` writes beside a non-zero fee.** ckpool discards a whole-number fee, and pays none without the address.
+- **Keep the `pooladdress` `main.ts` writes beside a non-zero fee.** ckpool pays no fee without it.
 - **Don't reintroduce `--platform=linux/amd64` on the `Dockerfile`'s builder stage**: it puts amd64 binaries in the aarch64 image.
 - **`main` never throws for a user-fixable problem** — return the failing `mining` health check instead; a thrown `main` crash-loops and leaks a mount set every cycle.
