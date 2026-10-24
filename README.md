@@ -76,12 +76,10 @@ Two models, one of which is written twice.
 
 | File          | Format | Modelled                | Written by         |
 | ------------- | ------ | ----------------------- | ------------------ |
-| `ckpool.conf` | JSON   | Yes, once per pool      | `main`             |
+| `ckpool.conf` | JSON   | Yes — `FileHelper.json` | `main`, per pool   |
 | `store.json`  | JSON   | Yes — `FileHelper.json` | Actions and `main` |
 
 **Both pool configurations are generated in full at every start**, from the stored settings plus the node address resolved at that moment. A hand-edit does not survive.
-
-**The pool fee has to be written as a decimal**, and that is not a formatting nicety: ckpool reads it through a JSON parser whose "is this a real number" test is false for a whole number, so an integer fee is silently discarded in favour of the built-in default. The model writes it with decimal places for exactly that reason.
 
 The store holds the node selection, the payout address, the fee, the pool identifier and starting difficulty, the Flowee credential, and two pieces of bookkeeping — the "wipe on next start" flag and the last-seen chain, both of which `main` writes itself and are therefore deliberately outside its reactive read.
 
@@ -121,6 +119,8 @@ Three interfaces.
 **Shared mining pays the whole block to your payout address**, and settling with the miners who contributed is then between you and them, off-chain. A pool fee on that endpoint would only take a cut of your own reward, so the package writes it as zero.
 
 **Solo mining pays the finder**, which is what gives a fee something to take a share of. The fee is a percentage, and ckpool only pays it out when a fee address validates — so **without that address, no fee is taken however high the percentage is set**. The package writes the address alongside the fee whenever the fee is non-zero.
+
+**A solo miner's username is its payout address.** A username that is not an address at all mines to your payout address instead; one shaped like an address that fails its checksum or belongs to another chain is refused at login.
 
 Its sibling package, ASICSeer, has no solo mode at all, because its upstream has none.
 
@@ -249,7 +249,7 @@ dependencies: # all three optional; exactly one enabled at a time, from the stor
   - bchd # >=0.22.2:0; healthChecks: [rpc-plaintext]; dialed via the plaintext proxy
   - flowee # >=2026.5.2:12; healthChecks: [primary]; needs a credential registered via createTask
 interfaces:
-  pool-mining: { type: p2p, port: 3333 } # shared; block pays btcaddress
+  pool-mining: { type: p2p, port: 3333 } # shared; block pays bchaddress
   solo-mining: { type: p2p, port: 4567 } # solo; block pays the finder, fee to pooladdress
   web-ui: { type: ui, port: 80 }
 actions:

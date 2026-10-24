@@ -8,7 +8,7 @@ RUN apt-get update && \
     ca-certificates git python3 && \
     rm -rf /var/lib/apt/lists/*
 
-ARG CKPOOL_REF=v1.1.0
+ARG CKPOOL_REF=v1.3.0
 RUN git clone --depth 1 --branch ${CKPOOL_REF} \
     https://github.com/skaisser/ckpool.git /build/ckpool
 
@@ -23,7 +23,7 @@ RUN python3 /build/patches/apply.py
 RUN ./autogen.sh && ./configure && make -j"$(nproc)"
 
 # ── Runtime ─────────────────────────────────────────────────────────
-FROM node:20-bookworm-slim
+FROM node:22.23.4-bookworm-slim
 
 ENV NODE_ENV=production
 
