@@ -226,7 +226,7 @@ export const main = sdk.setupMain(async ({ effects }) => {
   await ckpoolConf('pool').write(effects, {
     ...common,
     btcsig: `/${identifier}/`,
-    serverurl: [`0.0.0.0:${poolPort}`],
+    serverurl: [`[::]:${poolPort}`],
     logdir: `${rootDir}/pool/log`,
     // Shared mining pays the whole block to `bchaddress`, so a fee here would
     // only take a cut of the operator's own reward.
@@ -238,7 +238,7 @@ export const main = sdk.setupMain(async ({ effects }) => {
   await ckpoolConf('solo').write(effects, {
     ...common,
     btcsig: `/${identifier}-solo/`,
-    serverurl: [`0.0.0.0:${soloPort}`],
+    serverurl: [`[::]:${soloPort}`],
     logdir: `${rootDir}/solo/log`,
     // Solo pays the finder, so a fee has something to take a share of. ckpool
     // reads `poolfee` as a percentage and pays it to `pooladdress` — without
