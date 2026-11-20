@@ -5,12 +5,20 @@ RUN apt-get update && \
     DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
     build-essential autoconf automake libtool pkg-config \
     libssl-dev libjansson-dev libzmq3-dev \
-    ca-certificates git python3 && \
+    ca-certificates git openssh-client python3 && \
     rm -rf /var/lib/apt/lists/*
 
 ARG CKPOOL_REF=v1.3.0
-RUN git clone --depth 1 --branch ${CKPOOL_REF} \
-    https://github.com/skaisser/ckpool.git /build/ckpool
+ARG CKPOOL_COMMIT=0479f860e439d835d56779d2881312668994750c
+# The one of github.com/skaisser's SSH signing keys that signed CKPOOL_REF.
+ARG CKPOOL_SIGNING_KEY="ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAILkQFBOHCWwbjA3XalQoFml3zndzyQlXT4qfNpxmG1rQ"
+RUN git -c advice.detachedHead=false clone --depth 1 --branch "${CKPOOL_REF}" \
+    https://github.com/skaisser/ckpool.git /build/ckpool \
+ && cd /build/ckpool \
+ && git checkout -q "${CKPOOL_COMMIT}" \
+ && test "$(git rev-parse HEAD)" = "${CKPOOL_COMMIT}" \
+ && printf 'skaisser@gmail.com namespaces="git" %s\n' "${CKPOOL_SIGNING_KEY}" >/tmp/allowed_signers \
+ && git -c gpg.ssh.allowedSignersFile=/tmp/allowed_signers verify-tag "${CKPOOL_REF}"
 
 COPY patches/ /build/patches/
 WORKDIR /build/ckpool
