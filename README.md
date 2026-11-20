@@ -51,6 +51,8 @@ One image, built here, running three times.
 
 **The image is built from source, natively for each architecture.** Cross-building it on one platform would put the wrong binaries in the other architecture's image while the manifest claimed otherwise.
 
+The build clones ckpool's pinned release tag and fails unless the tag resolves to the pinned commit and carries a valid SSH signature from the pinned key, one of the signing keys on the fork author's GitHub account.
+
 ## Volume and Data Layout
 
 One volume, plus a read-only view of the selected node's.
