@@ -56,6 +56,8 @@ log "starting ckpool mode=${MODE} conf=${CONF} rpc_target=${RPC_TARGET:-unknown}
           HEX=$(printf '%08x' "$((BC + d))")
           mkdir -p "${LOGROOT}/${HEX}" 2>/dev/null
           chmod 0755 "${LOGROOT}/${HEX}" 2>/dev/null
+          # Keep live heights out of the dashboard's age-based cleanup.
+          touch -c "${LOGROOT}/${HEX}" 2>/dev/null
         done
       fi
     fi
