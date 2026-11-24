@@ -62,6 +62,7 @@ export default {
     57: 'Nodo',
     59: 'El nodo todavía se está sincronizando. Los bloques encontrados antes de que se ponga al día serían rechazados por la red.',
     60: 'Minando en ${chain}',
+    61: 'El nodo ${node} no está instalado o es demasiado antiguo para compartir su red y su inicio de sesión RPC. Instálelo o actualícelo y luego inícielo.',
   },
   de_DE: {
     0: 'Konfigurieren',
@@ -124,6 +125,7 @@ export default {
     57: 'Knoten',
     59: 'Der Knoten synchronisiert noch. Blöcke, die vor dem Aufholen gefunden werden, würden vom Netzwerk abgelehnt.',
     60: 'Mining auf ${chain}',
+    61: 'Der Knoten ${node} ist nicht installiert oder zu alt, um sein Netzwerk und seine RPC-Anmeldung bereitzustellen. Installieren oder aktualisieren Sie ihn und starten Sie ihn dann.',
   },
   pl_PL: {
     0: 'Konfiguruj',
@@ -186,6 +188,7 @@ export default {
     57: 'Węzeł',
     59: 'Węzeł wciąż się synchronizuje. Bloki znalezione, zanim nadrobi zaległości, zostałyby odrzucone przez sieć.',
     60: 'Kopanie na ${chain}',
+    61: 'Węzeł ${node} nie jest zainstalowany lub jest zbyt stary, aby udostępniać swoją sieć i dane logowania RPC. Zainstaluj go lub zaktualizuj, a następnie uruchom.',
   },
   fr_FR: {
     0: 'Configurer',
@@ -248,5 +251,6 @@ export default {
     57: 'Nœud',
     59: 'Le nœud est encore en cours de synchronisation. Les blocs trouvés avant qu’il ait rattrapé son retard seraient rejetés par le réseau.',
     60: 'Minage sur ${chain}',
+    61: 'Le nœud ${node} n’est pas installé ou est trop ancien pour partager son réseau et son identifiant RPC. Installez-le ou mettez-le à jour, puis démarrez-le.',
   },
 } satisfies Record<string, LangDict>

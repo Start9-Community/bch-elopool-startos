@@ -57,10 +57,10 @@ The build clones ckpool's pinned release tag and fails unless the tag resolves t
 
 One volume, plus a read-only view of what the selected node publishes for its dependents.
 
-| Volume                        | Mount Point                        | Purpose                                                |
-| ----------------------------- | ---------------------------------- | ------------------------------------------------------ |
-| `main`                        | `/data`                            | Both pools' configuration and logs                     |
-| The node's `public/rpc/` (ro) | `/mnt/node-rpc`, package code only | `rpc.json`: the node's chain, sync state and RPC login |
+| Volume                   | Mount Point                           | Purpose                                                    |
+| ------------------------ | ------------------------------------- | ---------------------------------------------------------- |
+| `main`                   | `/data`                               | Both pools' configuration and logs                         |
+| The node's `public` (ro) | `/mnt/node-public`, package code only | `rpc/rpc.json`: the node's chain, sync state and RPC login |
 
 | Path         | Written by                 | Holds                                       |
 | ------------ | -------------------------- | ------------------------------------------- |
@@ -142,7 +142,7 @@ Selecting **Flowee** raises a third task, on Flowee rather than here, asking it 
 
 Once the node is running, both pools write their configurations, start, and accept miners.
 
-**Neither pool refuses to start over a fixable problem.** A missing payout address, an address on the wrong chain, or an unreachable node brings the service up with a single failing health check that says which — rather than throwing, because a thrown start-up crash-loops under automatic restart and leaks a mount set every cycle.
+**Neither pool refuses to start over a fixable problem.** A node that is not installed or too old to publish its network and login, a missing payout address, an address on the wrong chain, or an unreachable node brings the service up with a single failing health check that says which — rather than throwing, because a thrown start-up crash-loops under automatic restart and leaks a mount set every cycle.
 
 ## Actions
 
@@ -240,7 +240,7 @@ subcontainers:
   - ui-sub
 volumes:
   main: /data # pool/ and solo/ each hold a config and a log dir; store.json at the root
-  # the selected node's public/rpc is read-only at /mnt/node-rpc in the package container — rpc.json only
+  # the selected node's public volume is read-only at /mnt/node-public in the package container — rpc/rpc.json only
 file_models:
   - pool/ckpool.conf # generated in full each start
   - solo/ckpool.conf # same, with poolfee + pooladdress

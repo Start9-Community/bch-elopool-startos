@@ -76,6 +76,7 @@ const dict = {
   Node: 57,
   'The node is still syncing. Blocks found before it catches up would be rejected by the network.': 59,
   'Mining on ${chain}': 60,
+  'The ${node} node is not installed, or is too old to share its network and RPC login. Install or update it, then start it.': 61,
 } as const
 
 /**
