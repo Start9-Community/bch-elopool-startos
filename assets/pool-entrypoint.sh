@@ -49,13 +49,15 @@ log "starting ckpool mode=${MODE} conf=${CONF} rpc_target=${RPC_TARGET:-unknown}
              --data-binary '{"jsonrpc":"1.0","id":"sl","method":"getblockcount","params":[]}' \
              -H 'content-type: text/plain;' "http://${RPC_TARGET}/" 2>/dev/null \
            | jq -r '.result // empty' 2>/dev/null)
-      if [ -n "$BC" ] && [ "$BC" -gt 0 ] 2>/dev/null; then
+      if [ -n "$BC" ] && [ "$BC" -ge 0 ] 2>/dev/null; then
         # Current and next 2 heights — covers the race where the pool learns of
         # a new block slightly before or after this loop does.
         for d in 0 1 2; do
           HEX=$(printf '%08x' "$((BC + d))")
           mkdir -p "${LOGROOT}/${HEX}" 2>/dev/null
           chmod 0755 "${LOGROOT}/${HEX}" 2>/dev/null
+          # Keep live heights out of the dashboard's age-based cleanup.
+          touch -c "${LOGROOT}/${HEX}" 2>/dev/null
         done
       fi
     fi
