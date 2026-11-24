@@ -55,12 +55,12 @@ The build clones ckpool's pinned release tag and fails unless the tag resolves t
 
 ## Volume and Data Layout
 
-One volume, plus a read-only view of the selected node's.
+One volume, plus a read-only view of what the selected node publishes for its dependents.
 
-| Volume                 | Mount Point | Purpose                            |
-| ---------------------- | ----------- | ---------------------------------- |
-| `main`                 | `/data`     | Both pools' configuration and logs |
-| The node's `main` (ro) | `/mnt/node` | The node's own store               |
+| Volume                   | Mount Point                           | Purpose                                                    |
+| ------------------------ | ------------------------------------- | ---------------------------------------------------------- |
+| `main`                   | `/data`                               | Both pools' configuration and logs                         |
+| The node's `public` (ro) | `/mnt/node-public`, package code only | `rpc/rpc.json`: the node's chain, sync state and RPC login |
 
 | Path         | Written by                 | Holds                                       |
 | ------------ | -------------------------- | ------------------------------------------- |
@@ -70,7 +70,9 @@ One volume, plus a read-only view of the selected node's.
 
 **The two pools keep entirely separate state**, in sibling directories — separate configurations, separate logs, separate totals.
 
-**The node's volume is mounted for its store, not for chain data.** What is read from it is which chain the node is on and — for two of the three nodes — the RPC credentials it published there.
+**Share-log retention is per pool.** The dashboard keeps and counts the newest 500 share-log files and removes empty height directories untouched for an hour. The entrypoint refreshes the current and next two height directories every 30 seconds to protect live logging paths from that cleanup.
+
+**Only what the node publishes for its dependents is mounted, and only into the package's own container** — no subcontainer sees any of the node's files. What is read from it is which chain the node is on, whether it reports itself synced, and — for two of the three nodes — the RPC credentials it published there. The chain and credentials are read reactively, so a node that switches chains or changes its RPC login restarts the service onto it.
 
 ## File Models
 
@@ -91,13 +93,15 @@ Three declared, all optional, **exactly one enabled** — whichever node you sel
 
 | Dependency          | Required         | Version         | Health checks required | Why                            |
 | ------------------- | ---------------- | --------------- | ---------------------- | ------------------------------ |
-| Bitcoin Cash Node   | Only if selected | `>=29.0.0:11`   | `primary`              | Block templates and submission |
-| Bitcoin Cash Daemon | Only if selected | `>=0.22.2:0`    | `rpc-plaintext`        | The same                       |
-| Flowee the Hub      | Only if selected | `>=2026.5.2:12` | `primary`              | The same                       |
+| Bitcoin Cash Node   | Only if selected | `>=29.0.0:17`   | `primary`              | Block templates and submission |
+| Bitcoin Cash Daemon | Only if selected | `>=0.22.2:8`    | `rpc-plaintext`        | The same                       |
+| Flowee the Hub      | Only if selected | `>=2026.5.2:19` | `primary`              | The same                       |
+
+**Each floor is the node's first build that publishes `rpc.json` on its `public` volume**; against an older node the pools cannot learn the chain or the login.
 
 **They are gated on being up, not on being synced** — a node's initial sync takes days, and reporting that the chain is behind is more useful than refusing to start for the duration. The Node health check is what reports it.
 
-**Each node is dialed differently:** Bitcoin Cash Node remaps its RPC port per chain, so which port to resolve depends on the chain it is on — and only from `29.0.0:11` does it move that binding when it switches chain, hence the floor; Bitcoin Cash Daemon is dialed through its plaintext proxy so no certificate has to be trusted; and **Flowee keeps only a hash of each RPC password**, so this package mints its own credential and asks Flowee to register it.
+**Each node is dialed differently:** Bitcoin Cash Node remaps its RPC port per chain, so which port to resolve depends on the chain it is on; Bitcoin Cash Daemon is dialed through its plaintext proxy so no certificate has to be trusted; and **Flowee keeps only a hash of each RPC password**, so this package mints its own credential and asks Flowee to register it.
 
 A task this package raised on a node you have switched away from is hidden while that node is not selected; it returns if you select that node again.
 
@@ -140,7 +144,7 @@ Selecting **Flowee** raises a third task, on Flowee rather than here, asking it 
 
 Once the node is running, both pools write their configurations, start, and accept miners.
 
-**Neither pool refuses to start over a fixable problem.** A missing payout address, an address on the wrong chain, or an unreachable node brings the service up with a single failing health check that says which — rather than throwing, because a thrown start-up crash-loops under automatic restart and leaks a mount set every cycle.
+**Neither pool refuses to start over a fixable problem.** A node that is not installed or too old to publish its network and login, a missing payout address, an address on the wrong chain, or an unreachable node brings the service up with a single failing health check that says which — rather than throwing, because a thrown start-up crash-loops under automatic restart and leaks a mount set every cycle.
 
 ## Actions
 
@@ -192,16 +196,14 @@ The address task is raised from the start-up path with its own replay key, so it
 
 Four checks.
 
-| Check         | Displayed as    | Method                                |
-| ------------- | --------------- | ------------------------------------- |
-| `pool`        | "Shared Mining" | The shared pool's log, then its port  |
-| `solo`        | "Solo Mining"   | The solo pool's log, then its port    |
-| `ui`          | "Web Dashboard" | The dashboard's port                  |
-| `node-status` | "Node"          | The node's store, read from the mount |
+| Check         | Displayed as    | Method                                     |
+| ------------- | --------------- | ------------------------------------------ |
+| `pool`        | "Shared Mining" | The shared pool's log, then its port       |
+| `solo`        | "Solo Mining"   | The solo pool's log, then its port         |
+| `ui`          | "Web Dashboard" | The dashboard's port                       |
+| `node-status` | "Node"          | The node's `rpc.json`, read from the mount |
 
 **Each mining check reads the log before probing its port.** ckpool holds the stratum port open even when it cannot get a block template, so a bare port check would report a healthy pool that mines nothing. The check looks for the two failures that produce exactly that: an address the node rejected, and a node that is not answering.
-
-**The Node check is how a chain change is noticed.** The node's chain is a file rather than a reactive source, and it has to be re-read — a binding a node moves off is left _disabled_ rather than removed, and a disabled binding still resolves, so the address read would never go null on its own. On a change, the check restarts the service.
 
 When the node reports it is still syncing, that is reported as loading rather than blocking: **a block found on a stale tip would be orphaned**, which is worth saying and not worth refusing to run over.
 
@@ -240,16 +242,16 @@ subcontainers:
   - ui-sub
 volumes:
   main: /data # pool/ and solo/ each hold a config and a log dir; store.json at the root
-  # the selected node's main volume is read-only at /mnt/node — for its store, not chain data
+  # the selected node's public volume is read-only at /mnt/node-public in the package container — rpc/rpc.json only
 file_models:
   - pool/ckpool.conf # generated in full each start
   - solo/ckpool.conf # same, with poolfee + pooladdress
   - store.json # node selection, payout address, fee, identifier, difficulty, flowee creds
 startos_managed_env_vars: [] # everything is ckpool.conf
 dependencies: # all three optional; exactly one enabled at a time, from the stored selection
-  - bitcoincashd # >=29.0.0:11; healthChecks: [primary]; RPC port varies per chain
-  - bchd # >=0.22.2:0; healthChecks: [rpc-plaintext]; dialed via the plaintext proxy
-  - flowee # >=2026.5.2:12; healthChecks: [primary]; needs a credential registered via createTask
+  - bitcoincashd # >=29.0.0:17; healthChecks: [primary]; RPC port varies per chain
+  - bchd # >=0.22.2:8; healthChecks: [rpc-plaintext]; dialed via the plaintext proxy
+  - flowee # >=2026.5.2:19; healthChecks: [primary]; needs a credential registered via createTask
 interfaces:
   pool-mining: { type: p2p, port: 3333 } # shared; block pays bchaddress
   solo-mining: { type: p2p, port: 4567 } # solo; block pays the finder, fee to pooladdress
@@ -268,5 +270,5 @@ health_checks:
   - pool # "Shared Mining"; scrapes the log before probing the port
   - solo # "Solo Mining"; same
   - ui # "Web Dashboard"
-  - node-status # "Node"; re-reads the node's chain and restarts on a change
+  - node-status # "Node"; the node's sync state
 ```
