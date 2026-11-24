@@ -97,8 +97,6 @@ Three declared, all optional, **exactly one enabled** — whichever node you sel
 | Bitcoin Cash Daemon | Only if selected | `>=0.22.2:8`    | `rpc-plaintext`        | The same                       |
 | Flowee the Hub      | Only if selected | `>=2026.5.2:19` | `primary`              | The same                       |
 
-**Each floor is the node's first build that publishes `rpc.json` on its `public` volume**; against an older node the pools cannot learn the chain or the login.
-
 **They are gated on being up, not on being synced** — a node's initial sync takes days, and reporting that the chain is behind is more useful than refusing to start for the duration. The Node health check is what reports it.
 
 **Each node is dialed differently:** Bitcoin Cash Node remaps its RPC port per chain, so which port to resolve depends on the chain it is on; Bitcoin Cash Daemon is dialed through its plaintext proxy so no certificate has to be trusted; and **Flowee keeps only a hash of each RPC password**, so this package mints its own credential and asks Flowee to register it.
@@ -144,7 +142,7 @@ Selecting **Flowee** raises a third task, on Flowee rather than here, asking it 
 
 Once the node is running, both pools write their configurations, start, and accept miners.
 
-**Neither pool refuses to start over a fixable problem.** A node that is not installed or too old to publish its network and login, a missing payout address, an address on the wrong chain, or an unreachable node brings the service up with a single failing health check that says which — rather than throwing, because a thrown start-up crash-loops under automatic restart and leaks a mount set every cycle.
+**Neither pool refuses to start over a fixable problem.** A node that is not installed, a missing payout address, an address on the wrong chain, or an unreachable node brings the service up with a single failing health check that says which.
 
 ## Actions
 
@@ -205,7 +203,7 @@ Four checks.
 
 **Each mining check reads the log before probing its port.** ckpool holds the stratum port open even when it cannot get a block template, so a bare port check would report a healthy pool that mines nothing. The check looks for the two failures that produce exactly that: an address the node rejected, and a node that is not answering.
 
-When the node reports it is still syncing, that is reported as loading rather than blocking: **a block found on a stale tip would be orphaned**, which is worth saying and not worth refusing to run over.
+When the node reports it is still syncing, that is reported as loading rather than blocking: **a block found on a stale tip would be orphaned**.
 
 ## Backups and Restore
 
