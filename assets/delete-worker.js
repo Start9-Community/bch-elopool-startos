@@ -1,7 +1,6 @@
 'use strict'
 // Tiny HTTP server: handles POST /api/delete-worker?address=<addr>&mode=pool|solo
-// Writes a tombstone so stats-api.sh suppresses the worker even after the pool
-// daemon recreates the user file from its in-memory state.
+// Writes a tombstone so stats-api.sh suppresses the worker until its next share.
 // Listens on 127.0.0.1:8181 only; nginx proxies /api/delete-worker to it.
 var http = require('http')
 var fs = require('fs')
@@ -13,16 +12,25 @@ var url = require('url')
 var SAFE_ADDR =
   /^(bitcoincash:[pq][a-z0-9]{41,50}|[pq][a-z0-9]{41,50}|[13][a-zA-Z0-9]{25,34})$/i
 
+// Only the dashboard itself may delete. A browser sends Origin on every POST;
+// when present it must name the host the request was sent to (nginx passes the
+// client's Host through). The custom header can't be set by a cross-site form
+// or simple request, and with no CORS headers here its preflight fails.
+function sameOrigin(req) {
+  var origin = req.headers.origin
+  if (origin === undefined) return true
+  var host = req.headers.host
+  if (!host) return false
+  try {
+    return new URL(origin).host === host.toLowerCase()
+  } catch (e) {
+    return false
+  }
+}
+
 http
   .createServer(function (req, res) {
     res.setHeader('Content-Type', 'application/json')
-    res.setHeader('Access-Control-Allow-Origin', '*')
-
-    if (req.method === 'OPTIONS') {
-      res.writeHead(204)
-      res.end()
-      return
-    }
 
     if (req.method !== 'POST') {
       res.writeHead(405)
@@ -34,6 +42,15 @@ http
     if (parsed.pathname !== '/api/delete-worker') {
       res.writeHead(404)
       res.end(JSON.stringify({ ok: false, error: 'Not found' }))
+      return
+    }
+
+    if (
+      !sameOrigin(req) ||
+      req.headers['x-requested-with'] !== 'elopool-dashboard'
+    ) {
+      res.writeHead(403)
+      res.end(JSON.stringify({ ok: false, error: 'Forbidden' }))
       return
     }
 
@@ -54,13 +71,10 @@ http
 
     // path.basename strips any directory traversal attempts
     var safeAddr = path.basename(address)
-    var filePath = '/data/' + mode + '/log/users/' + safeAddr
     var tombPath = '/data/' + mode + '/log/users/.tomb.' + safeAddr
     var nowSec = Math.floor(Date.now() / 1000)
 
-    // Write tombstone first — stats-api.sh checks this to suppress the worker
-    // even after the pool daemon rewrites the user file from its in-memory state.
-    // The tombstone is cleared automatically when lastshare advances past it.
+    // stats-api.sh clears the tombstone once lastshare advances past it.
     fs.writeFile(tombPath, String(nowSec), function (tombErr) {
       if (tombErr) {
         res.writeHead(500)
@@ -72,16 +86,8 @@ http
         )
         return
       }
-      // Also delete the user file (best-effort; daemon may recreate it)
-      fs.unlink(filePath, function (unlinkErr) {
-        if (unlinkErr && unlinkErr.code !== 'ENOENT') {
-          res.writeHead(500)
-          res.end(JSON.stringify({ ok: false, error: unlinkErr.message }))
-          return
-        }
-        res.writeHead(200)
-        res.end(JSON.stringify({ ok: true, address: address, mode: mode }))
-      })
+      res.writeHead(200)
+      res.end(JSON.stringify({ ok: true, address: address, mode: mode }))
     })
   })
   .listen(8181, '127.0.0.1')

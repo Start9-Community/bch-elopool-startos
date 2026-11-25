@@ -500,26 +500,36 @@
       html += '<td>' + lastShare + '</td>'
       html += '<td><span class="status-dot ' + status + '"></span>'
       html += statusLabel + '</td>'
-      var addrForDelete = (w.worker || w.user || '').split('.')[0]
-      html +=
-        '<td><button class="delete-btn" data-address="' +
-        escapeHtml(addrForDelete) +
-        '" data-mode="' +
-        escapeHtml(w._mode) +
-        '" title="Remove worker from stats">Delete</button></td>'
       html += '</tr>'
     }
 
     tbody.innerHTML = html
+
+    for (var r = 0; r < activeWorkers.length; r++) {
+      var btn = document.createElement('button')
+      btn.className = 'delete-btn'
+      btn.dataset.address = (
+        activeWorkers[r].worker ||
+        activeWorkers[r].user ||
+        ''
+      ).split('.')[0]
+      btn.dataset.mode = activeWorkers[r]._mode
+      btn.title = 'Remove worker from stats'
+      btn.textContent = 'Delete'
+      tbody.rows[r].insertCell().appendChild(btn)
+    }
 
     // Update my devices panel if logged in
     updateMyDevices(activeWorkers)
   }
 
   function escapeHtml(s) {
-    var d = document.createElement('div')
-    d.appendChild(document.createTextNode(s))
-    return d.innerHTML
+    return String(s == null ? '' : s)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;')
   }
 
   // ── Login / Address Filter ────────────────────────────────────────
@@ -762,8 +772,8 @@
     workersTbody.addEventListener('click', function (e) {
       var btn = e.target
       if (!btn || btn.className.indexOf('delete-btn') < 0) return
-      var address = btn.getAttribute('data-address')
-      var mode = btn.getAttribute('data-mode')
+      var address = btn.dataset.address
+      var mode = btn.dataset.mode
       if (!address || !mode) return
       btn.disabled = true
       btn.textContent = '...'
@@ -772,7 +782,11 @@
           encodeURIComponent(address) +
           '&mode=' +
           encodeURIComponent(mode),
-        { method: 'POST' },
+        {
+          method: 'POST',
+          // delete-worker.js refuses a request without it, and no cross-site form or simple request can send it.
+          headers: { 'X-Requested-With': 'elopool-dashboard' },
+        },
       )
         .then(function (res) {
           return res.json()
