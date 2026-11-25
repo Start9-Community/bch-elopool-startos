@@ -1,17 +1,19 @@
 #!/bin/sh
-# Reads pool/solo stats from daemon log files and BCHN RPC,
-# then assembles JSON for the WebUI.
+# Reads pool/solo stats from daemon log files and the node figures the shared
+# pool's entrypoint publishes, then assembles JSON for the WebUI.
 #
 # The pool/solo daemons automatically write stats to:
 #   {logdir}/pool/pool.status  — multi-line JSON with pool-wide stats
 #   {logdir}/users/{address}   — per-user JSON with worker arrays
 # logdir = /data/pool/log (pool mode) or /data/solo/log (solo mode)
-# These files live on the shared /data volume, accessible to this container.
+# Only those log directories and /data/dashboard are mounted in this container.
 
 API_DIR="/var/www/html/api"
-CONF="/data/pool/ckpool.conf"
+NODE_STATS="/data/dashboard/node-stats.json"
 # Sharelog files kept and counted, per pool: about four hours of block templates.
 SHARELOG_KEEP=500
+# Sharelog bytes kept and read per pool, newest first.
+SHARELOG_MAX_BYTES=$((16 * 1024 * 1024))
 mkdir -p "$API_DIR"
 rm -f "${API_DIR}"/sharelog-debug-*.json
 
@@ -28,16 +30,6 @@ JQ_DEFS='def hr2n:
   elif endswith("K") then (.[:-1]|tonumber)*1e3
   else (tonumber // 0)
   end;'
-
-# ── Helper: JSON-RPC call to BCHN ──────────────────────────────────
-rpc_call() {
-  METHOD="$1"
-  if [ -z "$RPC_URL" ]; then return 1; fi
-  curl -sf --max-time 5 -u "${RPC_USER}:${RPC_PASS}" \
-    -d "{\"jsonrpc\":\"1.0\",\"id\":1,\"method\":\"${METHOD}\",\"params\":[]}" \
-    -H "Content-Type: application/json" \
-    "http://${RPC_URL}" 2>/dev/null | jq -c '.result // empty' 2>/dev/null
-}
 
 # ── Read pool.status and transform to WebUI-compatible stats object ──
 # pool.status is multi-line JSON (3-4 lines); jq -s 'add' merges them.
@@ -125,33 +117,32 @@ read_workers_data() {
   # (accepted OR rejected) as one JSON line to
   # /data/{mode}/log/{blockheight}/{workbase}.sharelog, one file per block
   # template (about every 30s); the pool itself never reads them back.
-  # The counts cover the newest SHARELOG_KEEP files, and older files are
-  # deleted here so the logdir does not grow for as long as the pool runs.
+  # The counts cover the newest files, up to SHARELOG_KEEP of them and
+  # SHARELOG_MAX_BYTES in all; older files are deleted here so the logdir does
+  # not grow for as long as the pool runs. The newest file is always kept, and
+  # read only up to the byte bound.
   REJECT_MAP='{}'
   ACCEPT_MAP='{}'
-  SLFILES=$(find "/data/${1}/log" -mindepth 2 -maxdepth 2 -path "/data/${1}/log/[0-9a-f]*" \
-              -name '*.sharelog' -type f -printf '%T@ %p\n' 2>/dev/null \
-              | sort -rn | cut -d' ' -f2-)
-  printf '%s\n' "$SLFILES" | sed '/^$/d' | tail -n +$((SHARELOG_KEEP + 1)) | xargs -r rm -f
+  SLLIST=$(find "/data/${1}/log" -mindepth 2 -maxdepth 2 -path "/data/${1}/log/[0-9a-f]*" \
+              -name '*.sharelog' -type f -printf '%T@ %s %p\n' 2>/dev/null \
+              | sort -rn \
+              | awk -v keep="$SHARELOG_KEEP" -v max="$SHARELOG_MAX_BYTES" \
+                  '{ total += $2; print ((NR == 1 || (NR <= keep && total <= max)) ? "keep" : "drop"), $3 }')
+  printf '%s\n' "$SLLIST" | sed -n 's/^drop //p' | xargs -r rm -f
   # An hour untouched: the pool creates each height's directory before its first share.
   find "/data/${1}/log" -mindepth 1 -maxdepth 1 -type d -name '[0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f]' \
     -empty -mmin +60 -delete 2>/dev/null
-  SLFILES=$(printf '%s\n' "$SLFILES" | sed '/^$/d' | head -n "$SHARELOG_KEEP")
+  SLFILES=$(printf '%s\n' "$SLLIST" | sed -n 's/^keep //p')
   if [ -n "$SLFILES" ]; then
+    # A line the byte bound cuts short fails fromjson and is skipped.
     # shellcheck disable=SC2086
-    SHAREMAPS=$(cat $SLFILES 2>/dev/null \
-      | jq -cs '
-          (map(select((.workername // "") != ""))
-           | group_by(.workername)
-           | map({
-               wn: .[0].workername,
-               acc: (map(select(.result == true)) | length),
-               rej: (map(select(.result == false)) | length)
-             })) as $g
-          | {
-              acc: ($g | map({key: .wn, value: .acc}) | from_entries),
-              rej: ($g | map({key: .wn, value: .rej}) | from_entries)
-            }
+    SHAREMAPS=$(cat $SLFILES 2>/dev/null | head -c "$SHARELOG_MAX_BYTES" \
+      | jq -cnR '
+          reduce (inputs | fromjson? | select((.workername // "") != "")) as $s
+            ({acc: {}, rej: {}};
+             if $s.result == true then .acc[$s.workername] += 1
+             elif $s.result == false then .rej[$s.workername] += 1
+             else . end)
         ' 2>/dev/null)
     if [ -n "$SHAREMAPS" ]; then
       ACCEPT_MAP=$(printf '%s' "$SHAREMAPS" | jq -c '.acc // {}' 2>/dev/null) || ACCEPT_MAP='{}'
@@ -217,33 +208,13 @@ read_workers_data() {
   fi
 }
 
-# ── Read RPC credentials from ckpool config ────────────────────────
-load_rpc_creds() {
-  if [ -f "$CONF" ]; then
-    RPC_URL=$(jq -r '.btcd[0].url // empty' "$CONF" 2>/dev/null)
-    RPC_USER=$(jq -r '.btcd[0].auth // empty' "$CONF" 2>/dev/null)
-    RPC_PASS=$(jq -r '.btcd[0].pass // empty' "$CONF" 2>/dev/null)
-  fi
-}
-
 # ── Emit stratum ports for the WebUI ───────────────────────────────
 # The dashboard reads /api/config.json instead of hard-coding ports.
-# Ports come from the generated pool/solo configs (serverurl "0.0.0.0:PORT"),
-# which main.ts derives from the package's declared interfaces.
-write_config() {
-  CONF_BASE=$(basename "$CONF")
-  PP=$(jq -r '.serverurl[0] // empty' "/data/pool/${CONF_BASE}" 2>/dev/null | sed 's/.*://')
-  SP=$(jq -r '.serverurl[0] // empty' "/data/solo/${CONF_BASE}" 2>/dev/null | sed 's/.*://')
-  printf '%s' "{\"poolPort\":${PP:-0},\"soloPort\":${SP:-0}}" \
-    > "${API_DIR}/config.json.tmp" && mv "${API_DIR}/config.json.tmp" "${API_DIR}/config.json"
-}
-
-load_rpc_creds
+# main.ts passes them in from the package's declared interfaces.
+printf '%s' "{\"poolPort\":${POOL_PORT:-0},\"soloPort\":${SOLO_PORT:-0}}" \
+  > "${API_DIR}/config.json.tmp" && mv "${API_DIR}/config.json.tmp" "${API_DIR}/config.json"
 
 while true; do
-  load_rpc_creds
-  write_config
-
   # ── Pool mode stats (from /data/pool/log/)
   POOL_STATS=$(read_pool_stats pool)
   POOL_USERS=$(read_users_data pool)
@@ -254,18 +225,15 @@ while true; do
   SOLO_USERS=$(read_users_data solo)
   SOLO_WORKERS=$(read_workers_data solo)
 
-  # ── Blockchain stats from BCHN RPC ──────────────────────────────
-  CHAIN_INFO=$(rpc_call getblockchaininfo || echo '{}')
-  MINING_INFO=$(rpc_call getmininginfo || echo '{}')
-  NET_INFO=$(rpc_call getnetworkinfo || echo '{}')
-  MEMPOOL_INFO=$(rpc_call getmempoolinfo || echo '{}')
-  RPC_STATUS="ok"
-
-  [ -z "$CHAIN_INFO" ] && CHAIN_INFO='{}'
-  [ -z "$MINING_INFO" ] && MINING_INFO='{}'
-  [ -z "$NET_INFO" ] && NET_INFO='{}'
-  [ -z "$MEMPOOL_INFO" ] && MEMPOOL_INFO='{}'
-  [ "$CHAIN_INFO" = '{}' ] && RPC_STATUS='unavailable'
+  # ── Node figures, as pool-entrypoint.sh last published them ─────
+  NODE_AGE=$(( $(date +%s) - $(stat -c %Y "$NODE_STATS" 2>/dev/null || echo 0) ))
+  if [ "$NODE_AGE" -le 20 ] && cp "$NODE_STATS" "${API_DIR}/node-stats.json.tmp" 2>/dev/null; then
+    RPC_STATUS="ok"
+  else
+    RPC_STATUS="unavailable"
+    printf '{}' > "${API_DIR}/node-stats.json.tmp"
+  fi
+  mv "${API_DIR}/node-stats.json.tmp" "${API_DIR}/node-stats.json"
 
   # ── Write JSON files atomically ──────────────────────────────────
   printf '%s' "{\"stats\":${POOL_STATS},\"users\":${POOL_USERS},\"workers\":${POOL_WORKERS}}" \
@@ -273,16 +241,6 @@ while true; do
 
   printf '%s' "{\"stats\":${SOLO_STATS},\"users\":${SOLO_USERS},\"workers\":${SOLO_WORKERS}}" \
     > "${API_DIR}/solo-stats.json.tmp" && mv "${API_DIR}/solo-stats.json.tmp" "${API_DIR}/solo-stats.json"
-
-  # Only the fields the dashboard shows.
-  jq -cn --argjson bc "$CHAIN_INFO" --argjson mining "$MINING_INFO" \
-    --argjson net "$NET_INFO" --argjson mem "$MEMPOOL_INFO" '{
-      blockchain: ($bc | {chain, blocks, headers, verificationprogress, difficulty, size_on_disk}),
-      mining: ($mining | {difficulty, networkhashps}),
-      network: ($net | {subversion, connections}),
-      mempool: ($mem | {bytes})
-    }' > "${API_DIR}/node-stats.json.tmp" 2>/dev/null \
-    && mv "${API_DIR}/node-stats.json.tmp" "${API_DIR}/node-stats.json"
 
   printf '%s' "{\"pool\":${POOL_STATS},\"solo\":${SOLO_STATS},\"node_rpc\":\"${RPC_STATUS}\"}" \
     > "${API_DIR}/service-status.json.tmp" && mv "${API_DIR}/service-status.json.tmp" "${API_DIR}/service-status.json"

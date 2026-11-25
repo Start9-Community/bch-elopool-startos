@@ -65,6 +65,41 @@ log "starting ckpool mode=${MODE} conf=${CONF} rpc_target=${RPC_TARGET:-unknown}
   done
 ) &
 
+# The dashboard's container holds no node login, so the shared pool publishes
+# the node figures it shows to /data/dashboard, the one place it reads them.
+if [ "$MODE" = "pool" ]; then
+(
+  rpc() {
+    curl -sf --max-time 5 --user "${RPC_USER}:${RPC_PASS}" \
+      --data-binary "{\"jsonrpc\":\"1.0\",\"id\":1,\"method\":\"$1\",\"params\":[]}" \
+      -H 'content-type: text/plain;' "http://${RPC_TARGET}/" 2>/dev/null \
+      | jq -c '.result // empty' 2>/dev/null
+  }
+  OUT="/data/dashboard/node-stats.json"
+  mkdir -p "$(dirname "$OUT")"
+  while : ; do
+    CHAIN_INFO=$(rpc getblockchaininfo)
+    if [ -n "$CHAIN_INFO" ]; then
+      MINING_INFO=$(rpc getmininginfo)
+      NET_INFO=$(rpc getnetworkinfo)
+      MEMPOOL_INFO=$(rpc getmempoolinfo)
+      [ -z "$MINING_INFO" ] && MINING_INFO='{}'
+      [ -z "$NET_INFO" ] && NET_INFO='{}'
+      [ -z "$MEMPOOL_INFO" ] && MEMPOOL_INFO='{}'
+      # Only the fields the dashboard shows.
+      jq -cn --argjson bc "$CHAIN_INFO" --argjson mining "$MINING_INFO" \
+        --argjson net "$NET_INFO" --argjson mem "$MEMPOOL_INFO" '{
+          blockchain: ($bc | {chain, blocks, headers, verificationprogress, difficulty, size_on_disk}),
+          mining: ($mining | {difficulty, networkhashps}),
+          network: ($net | {subversion, connections}),
+          mempool: ($mem | {bytes})
+        }' > "${OUT}.tmp" 2>/dev/null && mv "${OUT}.tmp" "$OUT"
+    fi
+    sleep 5
+  done
+) &
+fi
+
 # ckpool keeps a diff-weighted share sum per worker on disk, but each client's
 # current vardiff is only reachable over its Unix socket. Stage the live client
 # table on the shared volume so the dashboard can derive a real per-worker
