@@ -45,6 +45,15 @@ PATCHES = [
         1,
     ),
     (
+        'ckpmsg socket replies must retain their payload without continuation '
+        'markers; retire when upstream emits replies without diagnostic chunking',
+        'src/ckpmsg.c',
+        '\t\tLOGMSGSIZ(65536, LOG_NOTICE, "%s Received response: %s", stamp, buf2);',
+        '\t\t/* Preserve socket reply payloads for machine consumers. */\n'
+        '\t\tlogmsg(LOG_NOTICE, "%s Received response: %s", stamp, buf2);',
+        1,
+    ),
+    (
         'BCHD rejects a JSON-RPC request with no "id" member; upstream omits it',
         'src/bitcoin.c',
         r'{\"method\": ',
