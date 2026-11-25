@@ -35,7 +35,7 @@ Shows both pools side by side: current hashrate, accepted shares, connected work
 - **Configure** — your payout address, the fee you keep from a solo-mined block, the identifier written into the coinbase of blocks you find, and the difficulty new miners start at. Saving restarts both pools.
 - **Select Node Backend** — switch which node the pools mine on. If the new node is on a different chain, the accumulated share and hashrate figures are cleared, because they do not carry across chains.
 - **Connection Info** — the addresses and login format for your miners.
-- **Wipe Mining State** — clears every share count and hashrate figure and restarts. Use it when a miner is stuck showing as idle or the statistics look wrong. Blocks already found are not affected.
+- **Wipe Mining State** — clears every share count, hashrate figure and per-miner statistic, erases both pools' logs, and restarts. Use it when a miner is stuck showing as idle or the statistics look wrong. Coins from blocks already found are not affected.
 
 ## Limitations
 

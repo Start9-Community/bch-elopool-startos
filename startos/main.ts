@@ -40,6 +40,13 @@ const addressPrefix = {
   regtest: 'bchreg:',
 }
 
+/** A whole line of ckpool's log file: its timestamp, then a message matching `pattern`. */
+const ckpoolLogLine = (pattern: string) =>
+  new RegExp(
+    `^\\[\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}\\.\\d{3}\\] ${pattern}$`,
+    'm',
+  )
+
 export const main = sdk.setupMain(async ({ effects }) => {
   console.info(i18n('Starting EloPool'))
 
@@ -77,10 +84,30 @@ export const main = sdk.setupMain(async ({ effects }) => {
     mounts,
     'solo-sub',
   )
+  // The dashboard sees the pools' logs and what the shared pool publishes
+  // for it, never the configs or store that hold the node login.
   const uiSub = sdk.SubContainer.of(
     effects,
     { imageId: 'elopool' },
-    mounts,
+    sdk.Mounts.of()
+      .mountVolume({
+        volumeId: 'main',
+        subpath: 'pool/log',
+        mountpoint: `${rootDir}/pool/log`,
+        readonly: false,
+      })
+      .mountVolume({
+        volumeId: 'main',
+        subpath: 'solo/log',
+        mountpoint: `${rootDir}/solo/log`,
+        readonly: false,
+      })
+      .mountVolume({
+        volumeId: 'main',
+        subpath: 'dashboard',
+        mountpoint: `${rootDir}/dashboard`,
+        readonly: true,
+      }),
     'ui-sub',
   )
 
@@ -243,7 +270,7 @@ export const main = sdk.setupMain(async ({ effects }) => {
         .then((r) => r.stdout?.toString() ?? '')
         .catch(() => '')
 
-      if (/invalid b(tc|ch)address/i.test(log)) {
+      if (ckpoolLogLine('Invalid btcaddress: .+ !').test(log)) {
         return {
           result: 'failure',
           message: i18n(
@@ -252,7 +279,7 @@ export const main = sdk.setupMain(async ({ effects }) => {
           ),
         } as const
       }
-      if (/No bitcoinds active/i.test(log)) {
+      if (ckpoolLogLine('CRITICAL: No bitcoinds active!').test(log)) {
         return {
           result: 'failure',
           message: i18n(
@@ -296,7 +323,11 @@ export const main = sdk.setupMain(async ({ effects }) => {
     })
     .addDaemon('ui', {
       subcontainer: uiSub,
-      exec: { command: ['ui-entrypoint.sh'], sigtermTimeout: 10_000 },
+      exec: {
+        command: ['ui-entrypoint.sh'],
+        env: { POOL_PORT: String(poolPort), SOLO_PORT: String(soloPort) },
+        sigtermTimeout: 10_000,
+      },
       ready: {
         display: i18n('Web Dashboard'),
         fn: () =>

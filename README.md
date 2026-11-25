@@ -66,11 +66,14 @@ One volume, plus a read-only view of what the selected node publishes for its de
 | ------------ | -------------------------- | ------------------------------------------- |
 | `pool/`      | `main` and the shared pool | Its config, and its share and block history |
 | `solo/`      | `main` and the solo pool   | The same, for solo                          |
+| `dashboard/` | The shared pool            | The node figures the dashboard shows        |
 | `store.json` | Actions                    | Everything the user configures              |
+
+**The dashboard's subcontainer mounts only `pool/log`, `solo/log` and `dashboard/` (read-only)**, so it never holds the node's RPC login: the shared pool's entrypoint queries the node every 5 seconds and writes the few figures the dashboard shows to `dashboard/node-stats.json`. A copy older than 20 seconds is reported as the node being unavailable.
 
 **The two pools keep entirely separate state**, in sibling directories — separate configurations, separate logs, separate totals.
 
-**Share-log retention is per pool.** The dashboard keeps and counts the newest 500 share-log files and removes empty height directories untouched for an hour. The entrypoint refreshes the current and next two height directories every 30 seconds to protect live logging paths from that cleanup.
+**Share-log retention is per pool.** The dashboard keeps and counts the newest share-log files, up to 500 of them and 16 MiB in all (the newest file is always kept, and read only up to that size), and removes empty height directories untouched for an hour. The entrypoint refreshes the current and next two height directories every 30 seconds to protect live logging paths from that cleanup.
 
 **Only what the node publishes for its dependents is mounted, and only into the package's own container** — no subcontainer sees any of the node's files. What is read from it is which chain the node is on, whether it reports itself synced, and — for two of the three nodes — the RPC credentials it published there. The chain and credentials are read reactively, so a node that switches chains or changes its RPC login restarts the service onto it.
 
@@ -134,6 +137,8 @@ Both stratum ports are raw TCP and **advertise themselves with a `stratum+tcp://
 
 **Nothing is authenticated**, on either stratum port or the dashboard. Anyone who can reach a port can mine there, and anyone who can reach the dashboard sees your statistics.
 
+**The dashboard's Delete button hides a worker's row until that worker's next share**; its statistics stay on disk. The request is refused unless it comes from the dashboard page itself (a same-origin `Origin` and the `X-Requested-With: elopool-dashboard` header). The page is served with a Content-Security-Policy that allows only its own script and no inline handlers, and the stats JSON under `/api/` carries no CORS header.
+
 ## Installation and First-Run Flow
 
 Install raises **two `critical` tasks**: choose the node, and set the payout address. Neither can be skipped — a pool with no node has no work, and shared mining with no address has nowhere to pay a block.
@@ -167,7 +172,7 @@ The payout address, the fee, the pool identifier written into blocks, and the st
 
 ### Wipe Mining State
 
-Clears the accumulated share and block statistics for both pools.
+Clears both pools' log directories: their totals, per-miner statistics, share logs and ckpool's own log files. Coins already mined are untouched.
 
 - **What it changes:** sets a flag; the clearing happens on the next start, before the pools launch — because ckpool reloads its totals from its own status file at start.
 
@@ -201,7 +206,7 @@ Four checks.
 | `ui`          | "Web Dashboard" | The dashboard's port                       |
 | `node-status` | "Node"          | The node's `rpc.json`, read from the mount |
 
-**Each mining check reads the log before probing its port.** ckpool holds the stratum port open even when it cannot get a block template, so a bare port check would report a healthy pool that mines nothing. The check looks for the two failures that produce exactly that: an address the node rejected, and a node that is not answering.
+**Each mining check reads the log before probing its port.** ckpool holds the stratum port open even when it cannot get a block template, so a bare port check would report a healthy pool that mines nothing. The check looks for the two failures that produce exactly that: an address the node rejected, and a node that is not answering. It matches only whole lines in ckpool's own format (its timestamp, then `Invalid btcaddress: … !` or `CRITICAL: No bitcoinds active!`), so a miner name that contains those words cannot trip it.
 
 When the node reports it is still syncing, that is reported as loading rather than blocking: **a block found on a stale tip would be orphaned**.
 
@@ -237,9 +242,9 @@ architectures:
 subcontainers:
   - pool-sub # shared mode
   - solo-sub # ckpool -B (btcsolo)
-  - ui-sub
+  - ui-sub # mounts only pool/log, solo/log and dashboard/ (ro)
 volumes:
-  main: /data # pool/ and solo/ each hold a config and a log dir; store.json at the root
+  main: /data # pool/ and solo/ each hold a config and a log dir; dashboard/ holds node-stats.json; store.json at the root
   # the selected node's public volume is read-only at /mnt/node-public in the package container — rpc/rpc.json only
 file_models:
   - pool/ckpool.conf # generated in full each start

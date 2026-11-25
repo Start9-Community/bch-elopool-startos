@@ -42,7 +42,7 @@ const dict = {
   // actions/wipeMiningState.ts
   'Wipe Mining State': 32,
   'Clear the accumulated share counts and hashrate figures and restart the pool. Use it when a miner is stuck showing as idle or the statistics look wrong.': 33,
-  'Every share count and hashrate figure goes back to zero, and connected miners briefly disconnect. Blocks already found are not affected.': 34,
+  "Every share count, hashrate figure and per-miner statistic goes back to zero, both pools' logs are erased, and connected miners briefly disconnect. Coins from blocks already found are not affected.": 34,
 
   // init/taskConfigure.ts
   'Set the address the pool pays a found block to': 35,
