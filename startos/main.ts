@@ -40,12 +40,12 @@ const addressPrefix = {
   regtest: 'bchreg:',
 }
 
-/** A whole line of ckpool's log file: its timestamp, then a message matching `pattern`. */
-const ckpoolLogLine = (pattern: string) =>
-  new RegExp(
+const hasCkpoolLogMessage = (log: string, pattern: string) => {
+  const line = new RegExp(
     `^\\[\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}\\.\\d{3}\\] ${pattern}$`,
-    'm',
   )
+  return log.split('\n').some((entry) => line.test(entry))
+}
 
 export const main = sdk.setupMain(async ({ effects }) => {
   console.info(i18n('Starting EloPool'))
@@ -270,7 +270,7 @@ export const main = sdk.setupMain(async ({ effects }) => {
         .then((r) => r.stdout?.toString() ?? '')
         .catch(() => '')
 
-      if (ckpoolLogLine('Invalid btcaddress: .+ !').test(log)) {
+      if (hasCkpoolLogMessage(log, 'Invalid btcaddress: .+ !')) {
         return {
           result: 'failure',
           message: i18n(
@@ -279,7 +279,7 @@ export const main = sdk.setupMain(async ({ effects }) => {
           ),
         } as const
       }
-      if (ckpoolLogLine('CRITICAL: No bitcoinds active!').test(log)) {
+      if (hasCkpoolLogMessage(log, 'CRITICAL: No bitcoinds active!')) {
         return {
           result: 'failure',
           message: i18n(

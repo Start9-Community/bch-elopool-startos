@@ -206,7 +206,7 @@ Four checks.
 | `ui`          | "Web Dashboard" | The dashboard's port                       |
 | `node-status` | "Node"          | The node's `rpc.json`, read from the mount |
 
-**Each mining check reads the log before probing its port.** ckpool holds the stratum port open even when it cannot get a block template, so a bare port check would report a healthy pool that mines nothing. The check looks for the two failures that produce exactly that: an address the node rejected, and a node that is not answering. It matches only whole lines in ckpool's own format (its timestamp, then `Invalid btcaddress: … !` or `CRITICAL: No bitcoinds active!`), so a miner name that contains those words cannot trip it.
+**Each mining check reads the log before probing its port.** ckpool holds the stratum port open even when it cannot get a block template, so a bare port check would report a healthy pool that mines nothing. The check looks for the two failures that produce exactly that: an address the node rejected, and a node that is not answering. The carried logging patches turn embedded CR/LF characters into spaces, so each message occupies one physical log line, and prefix `+` to every chunk after the first when ckpool splits a long message into separately stamped lines. The check matches whole physical lines in ckpool's own format (its timestamp, then `Invalid btcaddress: … !` or `CRITICAL: No bitcoinds active!`), splitting only on LF, so miner-supplied text cannot produce a failure line.
 
 When the node reports it is still syncing, that is reported as loading rather than blocking: **a block found on a stale tip would be orphaned**.
 

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Patch ckpool so it works against all three BCH nodes StartOS packages.
+"""Patch ckpool for the supported BCH nodes and single-line logging.
 
 Upstream targets Bitcoin Cash Node, whose JSON-RPC the pool assumes. BCHD and
 Flowee the Hub each break a different one of those assumptions, and each break
@@ -23,6 +23,27 @@ COINBASE_AUX_GUARDED = (
 
 # (why, file, find, replace, expected hit count)
 PATCHES = [
+    (
+        'log messages must occupy one physical line; retire when upstream '
+        'normalizes embedded line breaks in logmsg',
+        'src/ckpool.c',
+        '\tget_timestamp(stamp);\n\tif (loglevel <= LOG_ERR',
+        '\t/* Each message occupies one physical log line. */\n'
+        '\tfor (char *p = buf; *p; p++) {\n'
+        "\t\tif (*p == '\\n' || *p == '\\r')\n"
+        "\t\t\t*p = ' ';\n"
+        '\t}\n'
+        '\tget_timestamp(stamp);\n\tif (loglevel <= LOG_ERR',
+        1,
+    ),
+    (
+        'continuation chunks of a split message are marked so miner text cannot '
+        'start a stamped line; retire with the logmsg patch',
+        'src/libckpool.h',
+        '\t\tlogmsg(__lvl, "%s", tmp42);\\',
+        '\t\tlogmsg(__lvl, OFFSET ? "+%s" : "%s", tmp42);\\',
+        1,
+    ),
     (
         'BCHD rejects a JSON-RPC request with no "id" member; upstream omits it',
         'src/bitcoin.c',
